@@ -13,8 +13,8 @@ Rust + Tauri 2 + Vue 3 macOS 本地代理客户端，提供 HTTP/HTTPS CONNECT �
 推送版本 tag 后，GitHub Actions 会分别构建 macOS Apple Silicon（arm64）和 Intel（x86_64）安装包，并创建 Draft Release：
 
 ```bash
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.1.2
+git push origin v0.1.2
 ```
 
 Homebrew Cask 模板位于 [`homebrew/Casks/domain-egress.rb`](homebrew/Casks/domain-egress.rb)。发布新版本后，将其复制到 `yogkang/homebrew-tap` 仓库的 `Casks/domain-egress.rb`，更新 `version` 和两个架构对应的 SHA-256。
