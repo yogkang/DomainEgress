@@ -1,0 +1,27 @@
+/target/
+
+# Legacy Rust/eframe UI (the maintained desktop UI is under vue3/)
+/src/
+/Cargo.toml
+/Cargo.lock
+
+/vue3/node_modules/
+/vue3/dist/
+/vue3/src-tauri/target/
+
+# Generated source archives and local build output
+/output/
+
+# Local browser/test artifacts
+/.playwright-cli/
+
+# Environment and local runtime files
+.env
+.env.*
+!.env.example
+*.log
+
+# Editor and operating-system files
+.idea/
+.vscode/
+.DS_Store

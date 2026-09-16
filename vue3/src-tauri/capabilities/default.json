@@ -1,0 +1,11 @@
+{
+  "identifier": "main-window",
+  "description": "Local desktop window",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-theme"
+  ]
+}
