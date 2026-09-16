@@ -32,6 +32,7 @@ struct Snapshot {
     ssh_running: bool,
     ssh_local_port: Option<u16>,
     interfaces: Vec<NetworkInterface>,
+    hostname: String,
 }
 #[derive(Clone, Serialize)]
 struct NetworkInterface { name: String, kind: String, addresses: Vec<String> }
@@ -108,6 +109,9 @@ fn local_interfaces() -> Vec<NetworkInterface> {
     }
     result
 }
+fn local_hostname() -> String {
+    Command::new("/bin/hostname").arg("-s").output().ok().filter(|output| output.status.success()).map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string()).filter(|value| !value.is_empty()).unwrap_or_else(|| "本机".into())
+}
 #[tauri::command]
 fn snapshot(state: State<AppState>) -> Snapshot {
     Snapshot {
@@ -119,6 +123,7 @@ fn snapshot(state: State<AppState>) -> Snapshot {
         ssh_running: state.ssh.is_running(),
         ssh_local_port: state.ssh.local_port(),
         interfaces: local_interfaces(),
+        hostname: local_hostname(),
     }
 }
 fn keychain_service() -> &'static str { "com.domainegress.client.ssh" }

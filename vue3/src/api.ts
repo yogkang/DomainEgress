@@ -13,7 +13,7 @@ export interface LogEntry { timestamp: number; level: string; source: string; me
 export interface NetworkInterface { name: string; kind: string; addresses: string[] }
 export interface PublicIpProbe { ip: string | null; sources: string[]; confidence: string; error: string | null }
 export interface UpdateInfo { current_version: string; latest_version: string | null; release_url: string | null; available: boolean; error: string | null }
-export interface Snapshot { config: Config; running: boolean; logs: LogEntry[]; traffic: number[]; message: string | null; ssh_running?: boolean; ssh_local_port?: number | null; interfaces?: NetworkInterface[] }
+export interface Snapshot { config: Config; running: boolean; logs: LogEntry[]; traffic: number[]; message: string | null; ssh_running?: boolean; ssh_local_port?: number | null; interfaces?: NetworkInterface[]; hostname?: string }
 export interface PortRow { port: string; pid: number; name: string; started: string; elapsed: string }
 export const desktop = isTauri()
 export const defaults: Config = { version: 2, access_mode: 'whitelist', whitelist: [

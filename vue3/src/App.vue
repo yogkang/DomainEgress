@@ -7,6 +7,7 @@ const tabs = [{ id: 'overview', title: '代理概览', icon: Activity }, { id: '
 const tab = ref('overview'), config = ref<Config>(structuredClone(defaults)), saved = ref<Config>(structuredClone(defaults))
 const running = ref(false), logs = ref<LogEntry[]>([]), traffic = ref<number[]>([]), busy = ref(false), connected = ref(!desktop), initialized = ref(false), sshRunning = ref(false), sshLocalPort = ref<number | null>(null), icloudAvailable = ref(false)
 const interfaces = ref<NetworkInterface[]>([])
+const hostname = ref('本机')
 const publicIp = ref<PublicIpProbe>({ ip: null, sources: [], confidence: '未探测', error: null }), publicIpBusy = ref(false)
 const updateInfo = ref<UpdateInfo | null>(null), updateBusy = ref(false), updateDismissed = ref(false)
 const notice = ref(''), error = ref(false), draft = ref(''), search = ref(''), logLevel = ref('all'), logOutcome = ref('all'), ruleSort = ref('name'), ruleSearch = ref(''), trendRange = ref(60), trendInterval = ref(60), autoScrollLogs = ref(true), trendStart = ref(''), trendEnd = ref(''), undoRule = ref<{ rules: string[]; mode: 'whitelist' | 'blacklist' } | null>(null)
@@ -22,6 +23,7 @@ const range = computed(() => { const end = Date.now() / 1000; return { start: en
 const blockedLogs = computed(() => logs.value.filter(l => l.outcome === '拦截' && l.timestamp >= range.value.start && l.timestamp <= range.value.end))
 const blockedDomains = computed(() => { const grouped = new Map<string, LogEntry & { count: number }>(); for (const log of blockedLogs.value) { const key = `${log.target}\u0000${log.source}`; const item = grouped.get(key); if (item) item.count += 1; else grouped.set(key, { ...log, count: 1 }) } return [...grouped.values()].sort((a, b) => b.count - a.count || b.timestamp - a.timestamp) })
 const filteredPorts = computed(() => ports.value.filter(p => Object.values(p).join(' ').toLowerCase().includes(portSearch.value.toLowerCase())))
+const localAddressSummary = computed(() => [...new Set(interfaces.value.flatMap(item => item.addresses))].join(' · ') || '未检测到')
 const buckets = computed(() => { const step = trendInterval.value; const start = Math.floor(range.value.start / step) * step; const end = Math.ceil(range.value.end / step) * step; const count = Math.min(1440, Math.max(1, Math.ceil((end - start) / step))); return Array.from({ length: count }, (_, i) => { const bucket = start + i * step; return { label: new Date(bucket * 1000).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }), count: traffic.value.filter(t => t >= bucket && t < bucket + step && t >= range.value.start && t <= range.value.end).length } }) })
 const maximum = computed(() => Math.max(1, ...buckets.value.map(b => b.count)))
 const trendRangeLabel = computed(() => trendRange.value < 60 ? `最近 ${trendRange.value} 分钟` : `最近 ${trendRange.value / 60} 小时`)
@@ -51,7 +53,7 @@ async function refresh(initial = false) {
   try {
     const result = await call<Snapshot>('snapshot')
     if (!initialized.value) { config.value = structuredClone(result.config); saved.value = structuredClone(result.config); initialized.value = true }
-    running.value = result.running; logs.value = result.logs; traffic.value = result.traffic; interfaces.value = result.interfaces ?? []; sshRunning.value = result.ssh_running ?? false; sshLocalPort.value = result.ssh_local_port ?? null; connected.value = true
+    running.value = result.running; logs.value = result.logs; traffic.value = result.traffic; interfaces.value = result.interfaces ?? []; hostname.value = result.hostname ?? '本机'; sshRunning.value = result.ssh_running ?? false; sshLocalPort.value = result.ssh_local_port ?? null; connected.value = true
     if (result.message) notify(result.message, true)
   } catch (e) { if (connected.value || initial) notify(String(e), true); connected.value = false }
 }
@@ -141,7 +143,7 @@ onUnmounted(() => { disposed = true; clearTimeout(timer) })
       <div class="sidebar-bottom"><div class="local-badge"><span class="dot" :class="{ live: running }"></span>{{ running ? '代理正在运行' : '代理已停止' }}</div><p>本地网络安全代理</p><span class="version">DESKTOP / 0.1.1</span><button class="sidebar-update" :disabled="updateBusy || !desktop" @click="checkUpdate"><RefreshCw :size="13" :class="{ spin: updateBusy }" />{{ updateBusy ? '检查中…' : '检查更新' }}</button><small v-if="updateInfo?.available" class="sidebar-update-hint">发现新版本 v{{ updateInfo.latest_version }}</small><small v-else-if="updateInfo && !updateInfo.error" class="sidebar-update-hint">当前已是最新版本</small></div>
     </aside>
     <main>
-      <header><div class="breadcrumb">工作空间 <ChevronRight :size="13" /> <span>{{ tabs.find(t => t.id === tab)?.title }}</span></div><div class="header-right"><span class="desktop-label">{{ desktop ? '本机桌面' : '界面预览' }}</span><span class="dot" :class="{ live: connected && desktop }"></span>{{ desktop ? (connected ? '核心已连接' : '连接中断') : '未连接核心' }}</div></header>
+      <header><div class="breadcrumb">工作空间 <ChevronRight :size="13" /> <span>{{ tabs.find(t => t.id === tab)?.title }}</span></div><div class="header-right"><span class="desktop-label">{{ desktop ? '本机桌面' : '界面预览' }}</span><span class="dot" :class="{ live: connected && desktop }"></span>{{ desktop ? (connected ? '核心已连接' : '连接中断') : '未连接核心' }}<span class="header-separator"></span><span class="host-info" :title="hostname">主机名 {{ hostname }}</span><span class="header-separator"></span><span class="host-info" :title="localAddressSummary">内网 {{ localAddressSummary }}</span></div></header>
       <div class="content">
         <div v-if="!desktop" class="preview-banner"><CircleHelp :size="17" /> 当前为浏览器界面预览。代理操作、配置保存与端口查询请使用桌面应用。</div>
         <div class="page-heading"><div><div class="eyebrow">{{ tab === 'overview' ? 'NETWORK OVERVIEW' : tab === 'rules' ? 'ACCESS POLICY' : tab === 'logs' ? 'REQUEST LOGS' : tab === 'ports' ? 'SYSTEM NETWORK' : 'PREFERENCES' }}</div><h1>{{ tabs.find(t => t.id === tab)?.title }}</h1><p>{{ tab === 'overview' ? '让每一次网络访问，都在掌控之中。' : tab === 'rules' ? '定义允许或拒绝访问的域名与 IP 地址。' : tab === 'logs' ? '查看本次运行的访问决策与请求信息。' : tab === 'ports' ? '查看本机 TCP 监听端口及所属进程。' : '管理代理监听地址、启动行为与日志策略。' }}</p></div><button v-if="tab === 'rules' || tab === 'settings'" class="primary" :disabled="busy || !desktop || !initialized || !connected || !dirty" @click="save"><Check :size="16" />保存配置<span v-if="dirty" class="unsaved"></span></button><span v-else-if="tab === 'overview'" class="pill">HTTP / HTTPS / SOCKS5</span></div>
@@ -202,6 +204,8 @@ onUnmounted(() => { disposed = true; clearTimeout(timer) })
 <style scoped>
 :global(body) { overflow-x: hidden; }
 .content { padding-top: 22px; }
+.header-separator { width:1px; height:14px; background:var(--border); margin:0 4px; }
+.host-info { max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); }
 .sidebar-update { margin-top: 10px; padding: 5px 0; border:0; background:transparent; color:var(--muted); font-size:10px; }
 .sidebar-bottom .version { display:block; }
 .sidebar-update { display:flex; width:max-content; justify-content:flex-start; }
@@ -275,4 +279,5 @@ onUnmounted(() => { disposed = true; clearTimeout(timer) })
 @media (max-width:700px) { .status-card { padding:16px; } .network-summary { padding:17px; } .network-summary-grid { grid-template-columns:1fr; gap:20px; } .public-ip-block { border-left:0; border-top:1px solid var(--border); padding:18px 0 0; } }
 @media (max-width:700px) { .public-ip-result { align-items:flex-start; flex-direction:column; gap:7px; } }
 @media (max-width:700px) { .update-banner { align-items:flex-start; flex-wrap:wrap; } .update-banner span { flex-basis:calc(100% - 30px); } }
+@media (max-width:700px) { .host-info { max-width:90px; } .header-separator { margin:0 1px; } }
 </style>
