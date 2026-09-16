@@ -99,7 +99,7 @@ fn validate(config: &Config) -> Result<(), String> {
         return Err("HTTP 与 SOCKS5 不能使用相同监听地址和端口".into());
     }
     for rule in config.whitelist.iter().chain(&config.blacklist) {
-        let host = rule.strip_prefix("*.").unwrap_or(rule);
+        let host = rule.strip_prefix("*.").or_else(|| rule.strip_prefix('.')).unwrap_or(rule);
         let valid_domain = host.len() <= 253
             && host.split('.').all(|part| {
                 !part.is_empty()

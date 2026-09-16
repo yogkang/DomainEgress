@@ -20,6 +20,9 @@ tar -czf "${ARCHIVE_PATH}" \
   --exclude='./vue3/.vite' \
   --exclude='./.DS_Store' \
   --exclude='*/.DS_Store' \
+  LICENSE \
+  README.md \
+  src \
   vue3/index.html \
   vue3/package.json \
   vue3/package-lock.json \

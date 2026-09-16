@@ -102,11 +102,11 @@ npm run build
 npm run package
 ```
 
-独立桌面应用输出：`vue3/src-tauri/target/release/bundle/macos/DomainEgress Vue.app`。
+独立桌面应用输出：`vue3/src-tauri/target/release/bundle/macos/DomainEgress.app`。
 打包后的应用包含前端资源，无需启动 Node/Vite。此构建用于本机运行，未做 Apple 公证。
 
 ```bash
-open "vue3/src-tauri/target/release/bundle/macos/DomainEgress Vue.app"
+open "vue3/src-tauri/target/release/bundle/macos/DomainEgress.app"
 ```
 
 面向使用者的安装和操作教程见：[vue3/README.md](vue3/README.md)。

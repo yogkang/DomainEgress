@@ -55,7 +55,7 @@ function discard() { config.value = JSON.parse(JSON.stringify(saved.value)) }
 function addRules() {
   const items = draft.value.split(/[\s,;，；]+/).map(x => x.trim().toLowerCase().replace(/\.$/, '')).filter(Boolean)
   if (!items.length) return
-  const invalid = items.find(item => !/^((\*\.)?([a-z0-9-]+\.)+[a-z]{2,}|\.([a-z0-9-]+\.)+[a-z]{2,}|(\d{1,3}\.){3}\d{1,3}|localhost)$/i.test(item))
+  const invalid = items.find(item => { if (item.includes(':')) return item !== '::' && /^[0-9a-f:]+$/i.test(item); return !/^((\*\.)?([a-z0-9-]+\.)+[a-z]{2,}|\.([a-z0-9-]+\.)+[a-z]{2,}|(\d{1,3}\.){3}\d{1,3}|localhost)$/i.test(item) })
   if (invalid) { notify(`规则格式不正确：${invalid}`, true); return }
   let added = 0
   for (const item of items) { if (!activeRules.value.includes(item)) { activeRules.value.push(item); timestamps.value[item] = Math.floor(Date.now() / 1000); added++ } }

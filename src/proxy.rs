@@ -23,6 +23,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     sync::Semaphore,
+    time::{timeout, Duration},
 };
 #[derive(Clone)]
 pub struct ProxyManager {
@@ -190,6 +191,7 @@ async fn pipe(mut a: TcpStream, mut b: TcpStream) -> Result<()> {
     Ok(())
 }
 async fn connect_target(cfg: &Arc<RwLock<Config>>, host: &str, port: u16) -> Result<TcpStream> {
+    timeout(Duration::from_secs(15), async {
     let ssh_port = cfg.read().ssh_proxy_port;
     if let Some(proxy_port) = ssh_port {
         let mut stream = TcpStream::connect(("127.0.0.1", proxy_port)).await?;
@@ -207,6 +209,7 @@ async fn connect_target(cfg: &Arc<RwLock<Config>>, host: &str, port: u16) -> Res
     } else {
         Ok(TcpStream::connect((host, port)).await?)
     }
+    }).await.map_err(|_| anyhow::anyhow!("连接上游目标超时（15 秒）"))?
 }
 fn target_address(authority: &str, default_port: u16) -> Result<(&str, u16)> {
     if let Some(ipv6) = authority.strip_prefix('[') {
@@ -301,7 +304,13 @@ async fn handle_http(
             outcome: "放行".into(),
         },
     );
-    let mut d = connect_target(&cfg, host, port).await?;
+    let mut d = match connect_target(&cfg, host, port).await {
+        Ok(stream) => stream,
+        Err(_) => {
+            c.write_all(b"HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n").await?;
+            return Ok(());
+        }
+    };
     if f.starts_with("CONNECT ") {
         c.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
             .await?
@@ -385,7 +394,13 @@ async fn handle_socks(
             outcome: "放行".into(),
         },
     );
-    let d = connect_target(&cfg, host.as_str(), port).await?;
+    let d = match connect_target(&cfg, host.as_str(), port).await {
+        Ok(stream) => stream,
+        Err(_) => {
+            c.write_all(&[5, 5, 0, 1, 0, 0, 0, 0, 0, 0]).await?;
+            return Ok(());
+        }
+    };
     c.write_all(&[5, 0, 0, 1, 0, 0, 0, 0, 0, 0]).await?;
     pipe(c, d).await
 }

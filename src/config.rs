@@ -7,6 +7,11 @@ fn normalize_rules(rules: &mut Vec<String>, added_at: &mut HashMap<String, u64>)
         let normalized = rule.trim().trim_end_matches('.').to_lowercase();
         if !normalized.is_empty() && seen.insert(normalized.clone()) { Some(normalized) } else { None }
     }).collect();
+    let normalized_added_at = std::mem::take(added_at)
+        .into_iter()
+        .map(|(rule, timestamp)| (rule.trim().trim_end_matches('.').to_lowercase(), timestamp))
+        .collect::<HashMap<_, _>>();
+    *added_at = normalized_added_at;
     added_at.retain(|rule, _| rules.iter().any(|item| item == rule));
 }
 #[derive(Clone, Serialize, Deserialize)]
