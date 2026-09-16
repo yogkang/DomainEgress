@@ -119,7 +119,7 @@ async function confirm() {
 let timer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
 async function poll() { await refresh(); if (!disposed) timer = setTimeout(poll, 1500) }
-onMounted(async () => { await refresh(true); await checkIcloud(); void checkUpdate(); if (!disposed) timer = setTimeout(poll, 1500) })
+onMounted(async () => { await refresh(true); await checkIcloud(); void probePublicIp(); void checkUpdate(); if (!disposed) timer = setTimeout(poll, 1500) })
 onUnmounted(() => { disposed = true; clearTimeout(timer) })
 </script>
 
