@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build macOS ${{ matrix.arch }}
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            arch: arm64
+          - target: x86_64-apple-darwin
+            arch: x86_64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: vue3/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: vue3/src-tauri -> vue3/src-tauri/target
+
+      - name: Install frontend dependencies
+        working-directory: vue3
+        run: npm ci
+
+      - name: Build and upload GitHub Release assets
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: vue3
+          tagName: ${{ github.ref_name }}
+          releaseName: DomainEgress ${{ github.ref_name }}
+          releaseBody: |
+            ## DomainEgress ${{ github.ref_name }}
+
+            macOS desktop proxy client.
+
+            - Apple Silicon: arm64
+            - Intel Mac: x86_64
+          releaseDraft: true
+          prerelease: false
+          args: --target ${{ matrix.target }}
