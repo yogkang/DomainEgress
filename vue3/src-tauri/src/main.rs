@@ -66,7 +66,18 @@ fn open_update(url: String) -> Result<(), String> {
 fn fetch_public_ip(url: &str) -> Result<String, String> {
     let output = Command::new("/usr/bin/curl").args(["--fail", "--silent", "--show-error", "--location", "--max-time", "10", url]).output().map_err(|e| e.to_string())?;
     if !output.status.success() { return Err(String::from_utf8_lossy(&output.stderr).trim().to_string()); }
-    let value = String::from_utf8_lossy(&output.stdout).trim().parse::<std::net::IpAddr>().map_err(|_| "来源返回的不是有效 IP 地址".to_string())?;
+    validate_public_ip(String::from_utf8_lossy(&output.stdout).trim())
+}
+fn fetch_public_ip_dns(query: &str, server: &str) -> Result<String, String> {
+    let resolver = format!("@{server}");
+    let output = Command::new("/usr/bin/dig").args(["+short", query, &resolver]).output().map_err(|e| e.to_string())?;
+    if !output.status.success() { return Err(String::from_utf8_lossy(&output.stderr).trim().to_string()); }
+    let response = String::from_utf8_lossy(&output.stdout);
+    let value = response.lines().map(str::trim).find(|line| !line.is_empty()).ok_or_else(|| "DNS 未返回 IP 地址".to_string())?;
+    validate_public_ip(value)
+}
+fn validate_public_ip(value: &str) -> Result<String, String> {
+    let value = value.parse::<std::net::IpAddr>().map_err(|_| "来源返回的不是有效 IP 地址".to_string())?;
     let public = match value {
         std::net::IpAddr::V4(ip) => !(ip.is_private() || ip.is_loopback() || ip.is_link_local() || ip.is_unspecified() || ip.is_multicast()),
         std::net::IpAddr::V6(ip) => !(ip.is_unique_local() || ip.is_loopback() || ip.is_unicast_link_local() || ip.is_unspecified() || ip.is_multicast()),
@@ -92,6 +103,20 @@ fn probe_public_ip() -> PublicIpProbe {
                 }
             }
             results.push((name, ip.clone()));
+        }
+    }
+    let dns_endpoints = [
+        ("dns-opendns", "myip.opendns.com", "resolver1.opendns.com"),
+        ("dns-cloudflare", "whoami.cloudflare", "1.1.1.1"),
+    ];
+    for (name, query, server) in dns_endpoints {
+        if let Ok(ip) = fetch_public_ip_dns(query, server) {
+            for (first_name, first_ip) in &results {
+                if first_ip == &ip {
+                    return PublicIpProbe { ip: Some(ip), sources: vec![(*first_name).into(), name.into()], confidence: "双源一致".into(), error: None };
+                }
+            }
+            results.push((name, ip));
         }
     }
     PublicIpProbe { ip: None, sources: results.iter().map(|(name, _)| (*name).into()).collect(), confidence: "未确认".into(), error: Some("候选地址均未能得到两个一致的公网 IPv4 来源".into()) }
