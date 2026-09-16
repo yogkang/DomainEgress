@@ -6,6 +6,8 @@ mod policy;
 mod proxy;
 #[path = "../../../src/ssh.rs"]
 mod ssh;
+#[path = "../../../src/ssh_forward.rs"]
+mod ssh_forward;
 
 use config::Config;
 use parking_lot::{Mutex, RwLock};
@@ -17,6 +19,7 @@ struct AppState {
     config: Arc<RwLock<Config>>,
     proxy: proxy::ProxyManager,
     ssh: ssh::SshManager,
+    ssh_forward: ssh_forward::SshForwardManager,
     operation: Mutex<()>,
     tray_status: Mutex<Option<tauri::menu::MenuItem<tauri::Wry>>>,
     tray_icon: Mutex<Option<tauri::tray::TrayIcon<tauri::Wry>>>,
@@ -36,6 +39,7 @@ struct Snapshot {
     ssh_local_port: Option<u16>,
     interfaces: Vec<NetworkInterface>,
     hostname: String,
+    ssh_forward_ports: std::collections::HashMap<String, u16>,
 }
 #[derive(Clone, Serialize)]
 struct NetworkInterface { name: String, kind: String, addresses: Vec<String> }
@@ -152,6 +156,7 @@ fn snapshot(state: State<AppState>) -> Snapshot {
         ssh_local_port: state.ssh.local_port(),
         interfaces: local_interfaces(),
         hostname: local_hostname(),
+        ssh_forward_ports: state.ssh_forward.running_ports(),
     }
 }
 fn keychain_service() -> &'static str { "com.domainegress.client.ssh" }
@@ -263,6 +268,18 @@ fn set_running(running: bool, state: State<AppState>) -> Result<(), String> {
     update_tray_status(&state, running);
     Ok(())
 }
+#[tauri::command]
+fn ssh_forward_start(id: String, state: State<AppState>) -> Result<u16, String> {
+    let rule = state.config.read().ssh_forwards.iter().find(|rule| rule.id == id).cloned().ok_or_else(|| "SSH 转发配置不存在".to_string())?;
+    let port = state.ssh_forward.start(&rule).map_err(|e| e.to_string())?;
+    let mut config = state.config.read().clone();
+    if let Some(item) = config.ssh_forwards.iter_mut().find(|item| item.id == id) { item.local_port = Some(port); }
+    config.save().map_err(|e| format!("SSH 转发配置保存失败：{e}"))?;
+    *state.config.write() = config;
+    Ok(port)
+}
+#[tauri::command]
+fn ssh_forward_stop(id: String, state: State<AppState>) -> Result<(), String> { state.ssh_forward.stop(&id).map_err(|e| e.to_string()) }
 fn update_tray_status(state: &AppState, running: bool) {
     if let Some(item) = state.tray_status.lock().as_ref() {
         let _ = item.set_text(if running { "🟢 代理运行中" } else { "⚪ 代理已停止" });
@@ -420,6 +437,12 @@ fn main() {
             let shared = Arc::new(RwLock::new(config.clone()));
             let proxy = proxy::ProxyManager::new(shared.clone());
             let ssh = ssh::SshManager::new();
+            let ssh_forward = ssh_forward::SshForwardManager::new();
+            if config.auto_start {
+                for rule in config.ssh_forwards.iter().filter(|rule| rule.auto_start) {
+                    if let Err(error) = ssh_forward.start(rule) { message = Some(format!("SSH 转发 {} 自动启动失败：{error}", rule.name)); }
+                }
+            }
             if config.auto_start {
                 let startup = validate(&config).and_then(|_| {
                     if let Some(id) = config.active_ssh_profile.as_ref() {
@@ -441,6 +464,7 @@ fn main() {
                 config: shared,
                 proxy,
                 ssh,
+                ssh_forward,
                 operation: Mutex::new(()),
                 tray_status: Mutex::new(None),
                 tray_icon: Mutex::new(None),
@@ -522,6 +546,8 @@ fn main() {
             open_update,
             save_config,
             set_running,
+            ssh_forward_start,
+            ssh_forward_stop,
             clear_logs,
             gist_pull,
             gist_push,
@@ -534,6 +560,7 @@ fn main() {
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
                 let _ = app.state::<AppState>().proxy.stop();
+                app.state::<AppState>().ssh_forward.stop_all();
             }
         });
 }

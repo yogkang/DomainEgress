@@ -33,6 +33,26 @@ pub struct SshProfile {
     pub enabled: bool,
 }
 #[derive(Clone, Serialize, Deserialize)]
+pub struct SshForwardRule {
+    pub id: String,
+    pub name: String,
+    pub project: String,
+    #[serde(default)]
+    pub note: String,
+    pub local_port: Option<u16>,
+    pub remote_host: String,
+    pub remote_port: u16,
+    #[serde(default = "default_forward_bind_host")]
+    pub bind_host: String,
+    pub ssh_host: String,
+    pub ssh_port: u16,
+    pub ssh_username: String,
+    #[serde(default)]
+    pub ssh_keychain_id: Option<String>,
+    #[serde(default)]
+    pub auto_start: bool,
+}
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Config {
     pub version: u32,
     pub access_mode: String,
@@ -55,6 +75,8 @@ pub struct Config {
     pub blacklist_added_at: HashMap<String, u64>,
     #[serde(default)]
     pub ssh_profiles: Vec<SshProfile>,
+    #[serde(default)]
+    pub ssh_forwards: Vec<SshForwardRule>,
     #[serde(default)]
     pub active_ssh_profile: Option<String>,
     #[serde(default)]
@@ -165,6 +187,7 @@ impl Default for Config {
             whitelist_added_at: HashMap::new(),
             blacklist_added_at: HashMap::new(),
             ssh_profiles: Vec::new(),
+            ssh_forwards: Vec::new(),
             active_ssh_profile: None,
             icloud_sync_enabled: false,
             gist_provider: "github".into(),
@@ -183,6 +206,7 @@ fn default_log_retention_days() -> u32 {
 fn default_trend_retention_days() -> u32 { 21 }
 fn default_gist_file_name() -> String { "domain-egress-rules.json".into() }
 fn default_ssh_auth() -> String { "agent".into() }
+fn default_forward_bind_host() -> String { "127.0.0.1".into() }
 impl Config {
     fn path() -> PathBuf {
         dirs::data_local_dir()
