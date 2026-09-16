@@ -55,7 +55,7 @@ function discard() { config.value = JSON.parse(JSON.stringify(saved.value)) }
 function addRules() {
   const items = draft.value.split(/[\s,;，；]+/).map(x => x.trim().toLowerCase().replace(/\.$/, '')).filter(Boolean)
   if (!items.length) return
-  const invalid = items.find(item => !/^((\*\.)?([a-z0-9-]+\.)+[a-z]{2,}|(\d{1,3}\.){3}\d{1,3}|localhost)$/i.test(item))
+  const invalid = items.find(item => !/^((\*\.)?([a-z0-9-]+\.)+[a-z]{2,}|\.([a-z0-9-]+\.)+[a-z]{2,}|(\d{1,3}\.){3}\d{1,3}|localhost)$/i.test(item))
   if (invalid) { notify(`规则格式不正确：${invalid}`, true); return }
   let added = 0
   for (const item of items) { if (!activeRules.value.includes(item)) { activeRules.value.push(item); timestamps.value[item] = Math.floor(Date.now() / 1000); added++ } }
@@ -73,7 +73,12 @@ function mainDomain(host: string) {
 }
 function showTargetMenu(event: MouseEvent, target: string) {
   const host = target.trim().toLowerCase().replace(/^https?:\/\//, '').split(/[/?#]/)[0].replace(/\.$/, '')
-  const candidates = [mainDomain(host)]
+  const parts = host.split('.').filter(Boolean)
+  const candidates = [host]
+  if (parts.length > 2 && !/^\d+(\.\d+){3}$/.test(host)) {
+    for (let i = 1; i < parts.length - 1; i++) candidates.push(`*.${parts.slice(i).join('.')}`)
+    candidates.push(`.${mainDomain(host)}`)
+  }
   const available = [...new Set(candidates)].filter(rule => !activeRules.value.includes(rule))
   selectedTargets.value = available.slice(0, 1)
   contextMenu.value = { target: host, x: event.clientX, y: event.clientY, candidates: available }
