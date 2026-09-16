@@ -82,6 +82,8 @@ impl Default for Config {
                 "github.com".into(),
                 "github.io".into(),
                 "githubcopilot.com".into(),
+                "gist.github.com".into(),
+                "gist.githubusercontent.com".into(),
                 "githubusercontent.com".into(),
                 "golang.org".into(),
                 "google.cn".into(),
