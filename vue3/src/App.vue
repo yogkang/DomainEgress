@@ -63,10 +63,17 @@ function addRules() {
 }
 function removeRule(rule: string) { undoRule.value = { rules: [rule], mode: config.value.access_mode }; config.value[config.value.access_mode] = activeRules.value.filter(r => r !== rule); delete timestamps.value[rule]; notify(`已删除 ${rule}，可撤销`) }
 function undoLastRule() { if (!undoRule.value) return; const { rules, mode } = undoRule.value; if (mode === config.value.access_mode) config.value[mode] = [...new Set([...rules, ...config.value[mode]])]; undoRule.value = null; notify('已撤销上次规则操作') }
+function mainDomain(host: string) {
+  if (/^\d+(\.\d+){3}$/.test(host) || host === 'localhost') return host
+  const parts = host.split('.').filter(Boolean)
+  if (parts.length <= 2) return host
+  const compoundSuffixes = new Set(['co.uk', 'org.uk', 'ac.uk', 'gov.uk', 'com.cn', 'net.cn', 'org.cn', 'com.hk', 'co.jp', 'com.au', 'co.nz', 'co.kr', 'co.in', 'com.br'])
+  const suffix = parts.slice(-2).join('.')
+  return parts.slice(-(compoundSuffixes.has(suffix) ? 3 : 2)).join('.')
+}
 function showTargetMenu(event: MouseEvent, target: string) {
   const host = target.trim().toLowerCase().replace(/^https?:\/\//, '').split(/[/?#]/)[0].replace(/\.$/, '')
-  const parts = host.split('.'); const candidates = [host]
-  if (parts.length > 2 && !/^\d+(\.\d+){3}$/.test(host)) for (let i = 1; i < parts.length - 1; i++) candidates.push(`*.${parts.slice(i).join('.')}`)
+  const candidates = [mainDomain(host)]
   const available = [...new Set(candidates)].filter(rule => !activeRules.value.includes(rule))
   selectedTargets.value = available.slice(0, 1)
   contextMenu.value = { target: host, x: event.clientX, y: event.clientY, candidates: available }
