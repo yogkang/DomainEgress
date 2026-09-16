@@ -237,7 +237,7 @@ fn set_running(running: bool, state: State<AppState>) -> Result<(), String> {
 }
 fn update_tray_status(state: &AppState, running: bool) {
     if let Some(item) = state.tray_status.lock().as_ref() {
-        let _ = item.set_text(if running { "🛡️ 代理运行中" } else { "⏹️ 代理已停止" });
+        let _ = item.set_text(if running { "🟢 代理运行中" } else { "⚪ 代理已停止" });
     }
     if let Some(icon) = state.tray_icon.lock().as_ref() {
         let bytes: &[u8] = if running { &include_bytes!("../icons/tray-running.png")[..] } else { &include_bytes!("../icons/tray-stopped.png")[..] };
@@ -420,9 +420,9 @@ fn main() {
                 app,
                 "status",
                 if app.state::<AppState>().proxy.is_running() {
-                    "🛡️ 代理运行中"
+                    "🟢 代理运行中"
                 } else {
-                    "⏹️ 代理已停止"
+                    "⚪ 代理已停止"
                 },
                 false,
                 None::<&str>,
