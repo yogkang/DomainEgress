@@ -2,12 +2,13 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Activity, ArrowUpRight, Check, ChevronRight, CircleHelp, Copy, Download, Globe2, ListFilter, Network, Play, Plus, RefreshCw, Search, Settings2, ShieldCheck, Square, Trash2, Upload, X } from 'lucide-vue-next'
 import { appearance, theme, themes, appearanceError, setAppearance, setTheme } from './theme'
-import { call, defaults, desktop, type Config, type LogEntry, type NetworkInterface, type PortRow, type PublicIpProbe, type Snapshot, type SshProfile } from './api'
+import { call, defaults, desktop, type Config, type LogEntry, type NetworkInterface, type PortRow, type PublicIpProbe, type Snapshot, type SshProfile, type UpdateInfo } from './api'
 const tabs = [{ id: 'overview', title: '代理概览', icon: Activity }, { id: 'rules', title: '访问控制', icon: ShieldCheck }, { id: 'logs', title: '访问日志', icon: ListFilter }, { id: 'ports', title: '监听端口', icon: Network }, { id: 'settings', title: '应用设置', icon: Settings2 }]
 const tab = ref('overview'), config = ref<Config>(structuredClone(defaults)), saved = ref<Config>(structuredClone(defaults))
 const running = ref(false), logs = ref<LogEntry[]>([]), traffic = ref<number[]>([]), busy = ref(false), connected = ref(!desktop), initialized = ref(false), sshRunning = ref(false), sshLocalPort = ref<number | null>(null), icloudAvailable = ref(false)
 const interfaces = ref<NetworkInterface[]>([])
 const publicIp = ref<PublicIpProbe>({ ip: null, sources: [], confidence: '未探测', error: null }), publicIpBusy = ref(false)
+const updateInfo = ref<UpdateInfo | null>(null), updateBusy = ref(false), updateDismissed = ref(false)
 const notice = ref(''), error = ref(false), draft = ref(''), search = ref(''), logLevel = ref('all'), logOutcome = ref('all'), ruleSort = ref('name'), ruleSearch = ref(''), trendRange = ref(60), trendInterval = ref(60), autoScrollLogs = ref(true), trendStart = ref(''), trendEnd = ref(''), undoRule = ref<{ rules: string[]; mode: 'whitelist' | 'blacklist' } | null>(null)
 const ports = ref<PortRow[]>([]), portBusy = ref(false), portLoaded = ref(false), portSearch = ref(''), confirmAction = ref<'clear' | 'save-mode' | PortRow | null>(null), pendingSave = ref<Config | null>(null), contextMenu = ref<{ target: string; x: number; y: number; candidates: string[] } | null>(null), selectedTargets = ref<string[]>([]), sshSecrets = ref<Record<string, string>>({}), gistToken = ref(''), draggedHop = ref<{ profile: SshProfile; index: number } | null>(null)
 const logPanel = ref<HTMLElement | null>(null)
@@ -30,6 +31,8 @@ const date = (t: number) => t ? new Date(t * 1000).toLocaleString('zh-CN', { hou
 const ruleDate = (t: number) => t ? date(t) : '内置规则'
 function notify(message: string, failed = false) { notice.value = message; error.value = failed }
 async function probePublicIp() { publicIpBusy.value = true; try { publicIp.value = await call<PublicIpProbe>('probe_public_ip') } catch (e) { publicIp.value = { ip: null, sources: [], confidence: '探测失败', error: String(e) } } finally { publicIpBusy.value = false } }
+async function checkUpdate() { if (!desktop) return; updateBusy.value = true; try { updateInfo.value = await call<UpdateInfo>('check_update') } finally { updateBusy.value = false } }
+async function openUpdate() { if (updateInfo.value?.release_url) await call('open_update', { url: updateInfo.value.release_url }) }
 function localInput(t: number) { const d = new Date(t * 1000 - new Date().getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16) }
 function setTrend(value: number) { trendRange.value = value }
 function exportRules() { const payload = { format: 'domain-egress-rules', version: 1, exported_at: new Date().toISOString(), access_mode: config.value.access_mode, whitelist: config.value.whitelist, blacklist: config.value.blacklist, whitelist_added_at: config.value.whitelist_added_at, blacklist_added_at: config.value.blacklist_added_at }; const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })); a.download = 'domain-egress-rules.json'; a.click(); URL.revokeObjectURL(a.href); notify('规则已导出') }
@@ -116,7 +119,7 @@ async function confirm() {
 let timer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
 async function poll() { await refresh(); if (!disposed) timer = setTimeout(poll, 1500) }
-onMounted(async () => { await refresh(true); await checkIcloud(); if (!disposed) timer = setTimeout(poll, 1500) })
+onMounted(async () => { await refresh(true); await checkIcloud(); void checkUpdate(); if (!disposed) timer = setTimeout(poll, 1500) })
 onUnmounted(() => { disposed = true; clearTimeout(timer) })
 </script>
 
@@ -135,6 +138,7 @@ onUnmounted(() => { disposed = true; clearTimeout(timer) })
         <div class="page-heading"><div><div class="eyebrow">{{ tab === 'overview' ? 'NETWORK OVERVIEW' : tab === 'rules' ? 'ACCESS POLICY' : tab === 'logs' ? 'REQUEST LOGS' : tab === 'ports' ? 'SYSTEM NETWORK' : 'PREFERENCES' }}</div><h1>{{ tabs.find(t => t.id === tab)?.title }}</h1><p>{{ tab === 'overview' ? '让每一次网络访问，都在掌控之中。' : tab === 'rules' ? '定义允许或拒绝访问的域名与 IP 地址。' : tab === 'logs' ? '查看本次运行的访问决策与请求信息。' : tab === 'ports' ? '查看本机 TCP 监听端口及所属进程。' : '管理代理监听地址、启动行为与日志策略。' }}</p></div><button v-if="tab === 'rules' || tab === 'settings'" class="primary" :disabled="busy || !desktop || !initialized || !connected || !dirty" @click="save"><Check :size="16" />保存配置<span v-if="dirty" class="unsaved"></span></button><span v-else-if="tab === 'overview'" class="pill">HTTP / HTTPS / SOCKS5</span></div>
         <div v-if="notice" class="notice" :class="{ error }" role="status"><span>{{ notice }}</span><button v-if="undoRule" class="undo" @click="undoLastRule">撤销</button><button aria-label="关闭提示" @click="notice = ''"><X :size="16" /></button></div>
         <div v-if="dirty" class="draft-banner">有未保存的修改，保存后生效。<button @click="discard">撤销修改</button></div>
+        <div v-if="updateInfo?.available && !updateDismissed" class="update-banner"><RefreshCw :size="17" /><span>发现新版本 <strong>v{{ updateInfo.latest_version }}</strong>，当前版本 v{{ updateInfo.current_version }}。</span><button class="primary" @click="openUpdate">查看更新</button><button class="update-dismiss" aria-label="稍后提醒" @click="updateDismissed = true">稍后</button></div>
 
         <template v-if="tab === 'overview'">
           <section class="status-card"><div class="status-icon" :class="{ stopped: !running }"><ShieldCheck :size="32" /></div><div class="status-text"><span class="section-label">代理服务</span><h2>{{ running ? '连接已就绪' : '准备好安全连接' }}<span class="pill" :class="{ green: running }">{{ running ? '运行中' : '已停止' }}</span></h2><p>{{ running ? '正在根据访问策略处理本机代理请求' : '启动代理，为网络访问应用你的准出策略' }}</p><div class="service-endpoints"><span>HTTP/HTTPS {{ saved.http_host }}:{{ saved.http_port }}</span><span>SOCKS5 {{ saved.socks_host }}:{{ saved.socks_port }}</span></div></div><button :class="running ? 'secondary' : 'primary'" :disabled="busy || !desktop || !connected" @click="toggle"><Square v-if="running" :size="15" /><Play v-else :size="15" />{{ running ? '停止代理' : '启动代理' }}</button></section>
@@ -218,6 +222,9 @@ onUnmounted(() => { disposed = true; clearTimeout(timer) })
 .interface-name { color:var(--muted); font-size:11px; }
 .interface-addresses { min-width:0; color:var(--text); font-size:11px; overflow-wrap:anywhere; }
 .public-ip-result { display:flex; align-items:center; gap:12px; min-height:34px; }
+.update-banner { display:flex; align-items:center; gap:12px; margin-bottom:18px; padding:12px 15px; color:var(--text); background:color-mix(in srgb, var(--accent) 12%, var(--surface)); border:1px solid color-mix(in srgb, var(--accent) 35%, var(--border)); border-radius:9px; }
+.update-banner span { flex:1; font-size:12px; }
+.update-dismiss { border:0; background:transparent; color:var(--muted); }
 .public-ip-result strong { font-size:18px; letter-spacing:.02em; }
 .notice .undo { color:var(--accent); font-weight:600; padding:4px 8px; background:none; border:0; }
 .gist-sync-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 22px; row-gap: 18px; }
@@ -227,4 +234,5 @@ onUnmounted(() => { disposed = true; clearTimeout(timer) })
 @media (max-width:700px) { .gist-sync-grid { grid-template-columns: 1fr; } .gist-sync-actions { align-items: stretch; } .gist-sync-actions button, .gist-sync-actions .muted { width: 100%; } }
 @media (max-width:700px) { .interface-row { grid-template-columns: 1fr auto; gap:5px 10px; } .interface-addresses { grid-column: 1 / -1; } }
 @media (max-width:700px) { .public-ip-result { align-items:flex-start; flex-direction:column; gap:7px; } }
+@media (max-width:700px) { .update-banner { align-items:flex-start; flex-wrap:wrap; } .update-banner span { flex-basis:calc(100% - 30px); } }
 </style>
