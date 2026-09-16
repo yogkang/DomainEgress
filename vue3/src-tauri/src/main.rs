@@ -231,7 +231,7 @@ fn set_running(running: bool, state: State<AppState>) -> Result<(), String> {
 }
 fn update_tray_status(state: &AppState, running: bool) {
     if let Some(item) = state.tray_status.lock().as_ref() {
-        let _ = item.set_text(if running { "🟢 运行中" } else { "⚪ 已停止" });
+        let _ = item.set_text(if running { "🛡️ 代理运行中" } else { "⏹️ 代理已停止" });
     }
 }
 #[derive(Serialize, Deserialize)]
@@ -409,9 +409,9 @@ fn main() {
                 app,
                 "status",
                 if app.state::<AppState>().proxy.is_running() {
-                    "🟢 运行中"
+                    "🛡️ 代理运行中"
                 } else {
-                    "⚪ 已停止"
+                    "⏹️ 代理已停止"
                 },
                 false,
                 None::<&str>,
