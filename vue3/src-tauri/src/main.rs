@@ -18,6 +18,7 @@ struct AppState {
     proxy: proxy::ProxyManager,
     ssh: ssh::SshManager,
     operation: Mutex<()>,
+    tray_status: Mutex<Option<tauri::menu::MenuItem<tauri::Wry>>>,
     message: Mutex<Option<String>>,
 }
 #[derive(Serialize)]
@@ -147,7 +148,14 @@ fn set_running(running: bool, state: State<AppState>) -> Result<(), String> {
         state.config.write().ssh_proxy_port = None;
         result
     }
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    update_tray_status(&state, running);
+    Ok(())
+}
+fn update_tray_status(state: &AppState, running: bool) {
+    if let Some(item) = state.tray_status.lock().as_ref() {
+        let _ = item.set_text(if running { "🟢 运行中" } else { "⚪ 已停止" });
+    }
 }
 #[tauri::command]
 fn clear_logs(state: State<AppState>) {
@@ -274,6 +282,7 @@ fn main() {
                 proxy,
                 ssh,
                 operation: Mutex::new(()),
+                tray_status: Mutex::new(None),
                 message: Mutex::new(message),
             });
             use tauri::{
@@ -281,10 +290,22 @@ fn main() {
                 tray::TrayIconBuilder,
             };
             let show = MenuItem::with_id(app, "show", "显示 DomainEgress", true, None::<&str>)?;
+            let status = MenuItem::with_id(
+                app,
+                "status",
+                if app.state::<AppState>().proxy.is_running() {
+                    "🟢 运行中"
+                } else {
+                    "⚪ 已停止"
+                },
+                false,
+                None::<&str>,
+            )?;
             let start = MenuItem::with_id(app, "start", "启动代理", true, None::<&str>)?;
             let stop = MenuItem::with_id(app, "stop", "停止代理", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &start, &stop, &quit])?;
+            *app.state::<AppState>().tray_status.lock() = Some(status.clone());
+            let menu = Menu::with_items(app, &[&show, &status, &start, &stop, &quit])?;
             TrayIconBuilder::new()
                 .icon(tauri::image::Image::from_bytes(include_bytes!(
                     "../icons/icon.png"
