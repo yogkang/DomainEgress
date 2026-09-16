@@ -19,6 +19,7 @@ struct AppState {
     ssh: ssh::SshManager,
     operation: Mutex<()>,
     tray_status: Mutex<Option<tauri::menu::MenuItem<tauri::Wry>>>,
+    tray_icon: Mutex<Option<tauri::tray::TrayIcon<tauri::Wry>>>,
     message: Mutex<Option<String>>,
 }
 #[derive(Serialize)]
@@ -233,6 +234,10 @@ fn update_tray_status(state: &AppState, running: bool) {
     if let Some(item) = state.tray_status.lock().as_ref() {
         let _ = item.set_text(if running { "🛡️ 代理运行中" } else { "⏹️ 代理已停止" });
     }
+    if let Some(icon) = state.tray_icon.lock().as_ref() {
+        let bytes: &[u8] = if running { &include_bytes!("../icons/tray-running.png")[..] } else { &include_bytes!("../icons/tray-stopped.png")[..] };
+        if let Ok(image) = tauri::image::Image::from_bytes(bytes) { let _ = icon.set_icon(Some(image)); }
+    }
 }
 #[derive(Serialize, Deserialize)]
 struct GistRules {
@@ -398,6 +403,7 @@ fn main() {
                 ssh,
                 operation: Mutex::new(()),
                 tray_status: Mutex::new(None),
+                tray_icon: Mutex::new(None),
                 message: Mutex::new(message),
             });
             use tauri::{
@@ -421,10 +427,9 @@ fn main() {
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
             *app.state::<AppState>().tray_status.lock() = Some(status.clone());
             let menu = Menu::with_items(app, &[&show, &status, &start, &stop, &quit])?;
-            TrayIconBuilder::new()
-                .icon(tauri::image::Image::from_bytes(include_bytes!(
-                    "../icons/icon.png"
-                ))?)
+            let initial_icon: &[u8] = if app.state::<AppState>().proxy.is_running() { &include_bytes!("../icons/tray-running.png")[..] } else { &include_bytes!("../icons/tray-stopped.png")[..] };
+            let tray = TrayIconBuilder::new()
+                .icon(tauri::image::Image::from_bytes(initial_icon)?)
                 .tooltip("DomainEgress")
                 .menu(&menu)
                 .on_menu_event(|app, event| {
@@ -453,6 +458,7 @@ fn main() {
                     }
                 })
                 .build(app)?;
+            *app.state::<AppState>().tray_icon.lock() = Some(tray);
             Ok(())
         })
         .on_window_event(|window, event| {
