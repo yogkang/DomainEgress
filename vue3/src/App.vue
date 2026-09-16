@@ -77,7 +77,7 @@ function showTargetMenu(event: MouseEvent, target: string) {
   const candidates = [host]
   if (parts.length > 2 && !/^\d+(\.\d+){3}$/.test(host)) {
     for (let i = 1; i < parts.length - 1; i++) candidates.push(`*.${parts.slice(i).join('.')}`)
-    candidates.push(`.${mainDomain(host)}`)
+    candidates.push(mainDomain(host))
   }
   const available = [...new Set(candidates)].filter(rule => !activeRules.value.includes(rule))
   selectedTargets.value = available.slice(0, 1)
