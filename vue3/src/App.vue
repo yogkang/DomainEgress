@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Activity, ArrowUpRight, Check, ChevronRight, CircleHelp, CircleStop, Copy, Download, Globe2, ListFilter, Network, Play, Plus, RefreshCw, Search, Settings2, ShieldCheck, Trash2, Upload, X } from 'lucide-vue-next'
 import { appearance, theme, themes, appearanceError, setAppearance, setTheme } from './theme'
 import { call, defaults, desktop, type Config, type LogEntry, type NetworkInterface, type PortRow, type PublicIpProbe, type Snapshot, type SshForwardRule, type SshProfile, type UpdateInfo } from './api'
-const tabs = [{ id: 'overview', title: '代理概览', icon: Activity }, { id: 'rules', title: '访问控制', icon: ShieldCheck }, { id: 'logs', title: '访问日志', icon: ListFilter }, { id: 'ports', title: '监听端口', icon: Network }, { id: 'settings', title: '应用设置', icon: Settings2 }]
+const tabs = [{ id: 'overview', title: '代理概览', icon: Activity }, { id: 'rules', title: '访问控制', icon: ShieldCheck }, { id: 'logs', title: '访问日志', icon: ListFilter }, { id: 'ports', title: '监听端口', icon: Network }, { id: 'ssh-forward', title: 'SSH 端口转发', icon: Network }, { id: 'settings', title: '应用设置', icon: Settings2 }]
 const tab = ref('overview'), config = ref<Config>(structuredClone(defaults)), saved = ref<Config>(structuredClone(defaults))
 const running = ref(false), logs = ref<LogEntry[]>([]), traffic = ref<number[]>([]), busy = ref(false), connected = ref(!desktop), initialized = ref(false), sshRunning = ref(false), sshLocalPort = ref<number | null>(null), icloudAvailable = ref(false)
 const interfaces = ref<NetworkInterface[]>([])
@@ -148,9 +148,9 @@ onUnmounted(() => { disposed = true; clearTimeout(timer) })
     </aside>
     <main>
       <header><div class="breadcrumb">工作空间 <ChevronRight :size="13" /> <span>{{ tabs.find(t => t.id === tab)?.title }}</span></div><div class="header-right"><span class="desktop-label">{{ desktop ? '本机桌面' : '界面预览' }}</span><span class="dot" :class="{ live: connected && desktop }"></span>{{ desktop ? (connected ? '核心已连接' : '连接中断') : '未连接核心' }}<span class="header-separator"></span><span class="host-info" :title="hostname">主机名 {{ hostname }}</span><span class="header-separator"></span><span class="host-info" :title="localAddressSummary">IPv4 {{ localAddressSummary }}</span></div></header>
-      <div class="content">
+      <div class="content" :class="{ 'forward-view': tab === 'ssh-forward' }">
         <div v-if="!desktop" class="preview-banner"><CircleHelp :size="17" /> 当前为浏览器界面预览。代理操作、配置保存与端口查询请使用桌面应用。</div>
-        <div class="page-heading"><div><div class="eyebrow">{{ tab === 'overview' ? 'NETWORK OVERVIEW' : tab === 'rules' ? 'ACCESS POLICY' : tab === 'logs' ? 'REQUEST LOGS' : tab === 'ports' ? 'SYSTEM NETWORK' : 'PREFERENCES' }}</div><h1>{{ tabs.find(t => t.id === tab)?.title }}</h1><p>{{ tab === 'overview' ? '让每一次网络访问，都在掌控之中。' : tab === 'rules' ? '定义允许或拒绝访问的域名与 IP 地址。' : tab === 'logs' ? '查看本次运行的访问决策与请求信息。' : tab === 'ports' ? '查看本机 TCP 监听端口及所属进程。' : '管理代理监听地址、启动行为与日志策略。' }}</p></div><button v-if="tab === 'rules' || tab === 'settings'" class="primary" :disabled="busy || !desktop || !initialized || !connected || !dirty" @click="save"><Check :size="16" />保存配置<span v-if="dirty" class="unsaved"></span></button><span v-else-if="tab === 'overview'" class="pill">HTTP / HTTPS / SOCKS5</span></div>
+        <div class="page-heading"><div><div class="eyebrow">{{ tab === 'overview' ? 'NETWORK OVERVIEW' : tab === 'rules' ? 'ACCESS POLICY' : tab === 'logs' ? 'REQUEST LOGS' : tab === 'ports' ? 'SYSTEM NETWORK' : tab === 'ssh-forward' ? 'SSH PORT FORWARDING' : 'PREFERENCES' }}</div><h1>{{ tabs.find(t => t.id === tab)?.title }}</h1><p>{{ tab === 'overview' ? '让每一次网络访问，都在掌控之中。' : tab === 'rules' ? '定义允许或拒绝访问的域名与 IP 地址。' : tab === 'logs' ? '查看本次运行的访问决策与请求信息。' : tab === 'ports' ? '查看本机 TCP 监听端口及所属进程。' : tab === 'ssh-forward' ? '将远程服务器端口安全映射到本机访问。' : '管理代理监听地址、启动行为与日志策略。' }}</p></div><button v-if="tab === 'rules' || tab === 'settings' || tab === 'ssh-forward'" class="primary" :disabled="busy || !desktop || !initialized || !connected || !dirty" @click="save"><Check :size="16" />保存配置<span v-if="dirty" class="unsaved"></span></button><span v-else-if="tab === 'overview'" class="pill">HTTP / HTTPS / SOCKS5</span></div>
         <div v-if="notice" class="notice" :class="{ error }" role="status"><span>{{ notice }}</span><button v-if="undoRule" class="undo" @click="undoLastRule">撤销</button><button aria-label="关闭提示" @click="notice = ''"><X :size="16" /></button></div>
         <div v-if="dirty" class="draft-banner">有未保存的修改，保存后生效。<button @click="discard">撤销修改</button></div>
         <div v-if="updateInfo?.available && !updateDismissed" class="update-banner"><RefreshCw :size="17" /><span>发现新版本 <strong>v{{ updateInfo.latest_version }}</strong>，当前版本 v{{ updateInfo.current_version }}。</span><button class="primary" @click="openUpdate">查看更新</button><button class="update-dismiss" aria-label="稍后提醒" @click="updateDismissed = true">稍后</button></div>
@@ -178,7 +178,7 @@ onUnmounted(() => { disposed = true; clearTimeout(timer) })
           <section class="panel"><div class="section-heading"><div class="search"><Search :size="17" /><input v-model="portSearch" aria-label="搜索端口" placeholder="搜索端口、进程或 PID"></div><button :disabled="portBusy || !desktop" @click="loadPorts"><RefreshCw :size="16" :class="{ spin: portBusy }" />{{ portBusy ? '查询中…' : '刷新' }}</button></div><div class="table-wrap"><table><thead><tr><th>监听地址</th><th>进程 / PID</th><th>启动时间 / 已运行</th><th class="right">操作</th></tr></thead><tbody><tr v-for="p in filteredPorts" :key="`${p.pid}-${p.port}`"><td class="mono">{{ p.port }}</td><td>{{ p.name }}<small class="cell-sub mono">{{ p.pid }}</small></td><td>{{ p.started }}<small class="cell-sub">{{ p.elapsed }}</small></td><td class="right"><button class="danger-text" @click="confirmAction = p">结束进程</button></td></tr></tbody></table><div v-if="!filteredPorts.length" class="empty">{{ portBusy ? '正在读取系统监听端口…' : '没有可显示的监听端口' }}</div></div><p class="footnote">数据来自 macOS lsof，只显示当前用户可见的 TCP 监听进程。</p></section>
         </template>
 
-        <template v-if="tab === 'settings'">
+        <template v-if="tab === 'settings' || tab === 'ssh-forward'">
           <section class="panel appearance-panel">
             <div class="section-heading"><div><h3>外观与主题</h3><p>即时生效并自动保存到本机，无需点击“保存配置”。</p></div></div>
             <div class="appearance-modes" role="group" aria-label="外观模式">
@@ -238,6 +238,7 @@ onUnmounted(() => { disposed = true; clearTimeout(timer) })
 .ssh-profile .toolbar { margin-top:10px; }
 .ssh-empty { padding:28px 15px; }
 .ssh-forward { border:1px solid var(--border); border-radius:9px; padding:16px; margin-bottom:12px; }
+.forward-view > .panel:not(.ssh-forward-panel) { display:none; }
 .ssh-forward-head { display:flex; align-items:center; gap:8px; margin-bottom:13px; }
 .ssh-forward-head input:first-child { width:140px; }
 .ssh-forward-head input:nth-child(2) { flex:1; min-width:120px; }
