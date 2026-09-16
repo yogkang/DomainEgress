@@ -2,10 +2,11 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Activity, ArrowUpRight, Check, ChevronRight, CircleHelp, Copy, Download, Globe2, ListFilter, Network, Play, Plus, RefreshCw, Search, Settings2, ShieldCheck, Square, Trash2, Upload, X } from 'lucide-vue-next'
 import { appearance, theme, themes, appearanceError, setAppearance, setTheme } from './theme'
-import { call, defaults, desktop, type Config, type LogEntry, type PortRow, type Snapshot, type SshProfile } from './api'
+import { call, defaults, desktop, type Config, type LogEntry, type NetworkInterface, type PortRow, type Snapshot, type SshProfile } from './api'
 const tabs = [{ id: 'overview', title: '代理概览', icon: Activity }, { id: 'rules', title: '访问控制', icon: ShieldCheck }, { id: 'logs', title: '访问日志', icon: ListFilter }, { id: 'ports', title: '监听端口', icon: Network }, { id: 'settings', title: '应用设置', icon: Settings2 }]
 const tab = ref('overview'), config = ref<Config>(structuredClone(defaults)), saved = ref<Config>(structuredClone(defaults))
 const running = ref(false), logs = ref<LogEntry[]>([]), traffic = ref<number[]>([]), busy = ref(false), connected = ref(!desktop), initialized = ref(false), sshRunning = ref(false), sshLocalPort = ref<number | null>(null), icloudAvailable = ref(false)
+const interfaces = ref<NetworkInterface[]>([])
 const notice = ref(''), error = ref(false), draft = ref(''), search = ref(''), logLevel = ref('all'), logOutcome = ref('all'), ruleSort = ref('name'), ruleSearch = ref(''), trendRange = ref(60), trendInterval = ref(60), autoScrollLogs = ref(true), trendStart = ref(''), trendEnd = ref(''), undoRule = ref<{ rules: string[]; mode: 'whitelist' | 'blacklist' } | null>(null)
 const ports = ref<PortRow[]>([]), portBusy = ref(false), portLoaded = ref(false), portSearch = ref(''), confirmAction = ref<'clear' | 'save-mode' | PortRow | null>(null), pendingSave = ref<Config | null>(null), contextMenu = ref<{ target: string; x: number; y: number; candidates: string[] } | null>(null), selectedTargets = ref<string[]>([]), sshSecrets = ref<Record<string, string>>({}), gistToken = ref(''), draggedHop = ref<{ profile: SshProfile; index: number } | null>(null)
 const logPanel = ref<HTMLElement | null>(null)
@@ -36,7 +37,7 @@ async function refresh(initial = false) {
   try {
     const result = await call<Snapshot>('snapshot')
     if (!initialized.value) { config.value = structuredClone(result.config); saved.value = structuredClone(result.config); initialized.value = true }
-    running.value = result.running; logs.value = result.logs; traffic.value = result.traffic; sshRunning.value = result.ssh_running ?? false; sshLocalPort.value = result.ssh_local_port ?? null; connected.value = true
+    running.value = result.running; logs.value = result.logs; traffic.value = result.traffic; interfaces.value = result.interfaces ?? []; sshRunning.value = result.ssh_running ?? false; sshLocalPort.value = result.ssh_local_port ?? null; connected.value = true
     if (result.message) notify(result.message, true)
   } catch (e) { if (connected.value || initial) notify(String(e), true); connected.value = false }
 }
@@ -135,6 +136,7 @@ onUnmounted(() => { disposed = true; clearTimeout(timer) })
 
         <template v-if="tab === 'overview'">
           <section class="status-card"><div class="status-icon" :class="{ stopped: !running }"><ShieldCheck :size="32" /></div><div class="status-text"><span class="section-label">代理服务</span><h2>{{ running ? '连接已就绪' : '准备好安全连接' }}<span class="pill" :class="{ green: running }">{{ running ? '运行中' : '已停止' }}</span></h2><p>{{ running ? '正在根据访问策略处理本机代理请求' : '启动代理，为网络访问应用你的准出策略' }}</p><div class="service-endpoints"><span>HTTP/HTTPS {{ saved.http_host }}:{{ saved.http_port }}</span><span>SOCKS5 {{ saved.socks_host }}:{{ saved.socks_port }}</span></div></div><button :class="running ? 'secondary' : 'primary'" :disabled="busy || !desktop || !connected" @click="toggle"><Square v-if="running" :size="15" /><Play v-else :size="15" />{{ running ? '停止代理' : '启动代理' }}</button></section>
+          <section class="panel local-network-panel"><div class="section-heading"><div><h3>本机网卡地址</h3><p>当前电脑有线与无线网卡的内网地址。</p></div><Network :size="21" class="muted" /></div><div v-if="interfaces.length" class="interface-list"><div v-for="item in interfaces" :key="item.name" class="interface-row"><span class="interface-kind">{{ item.kind || item.name }}</span><span class="interface-name mono">{{ item.name }}</span><span class="interface-addresses mono">{{ item.addresses.join(' · ') }}</span></div></div><div v-else class="empty">暂未检测到本机网卡地址</div></section>
           <div class="metrics"><section class="metric"><span>当前访问策略<ShieldCheck :size="17" /></span><strong>{{ saved.access_mode === 'whitelist' ? '白名单' : '黑名单' }}<small>模式</small></strong><p>{{ saved[saved.access_mode].length }} 条已保存规则<button @click="navigate('rules')">管理规则 <ArrowUpRight :size="14" /></button></p></section><section class="metric"><span>{{ trendRangeLabel }}放行<ArrowUpRight :size="17" /></span><strong>{{ admitted.toLocaleString() }}<small>次</small></strong><p>按当前趋势范围统计</p></section><section class="metric"><span>已记录的拦截<ShieldCheck :size="17" /></span><strong>{{ blocked.toLocaleString() }}<small>次</small></strong><p>当前内存日志中的拦截记录</p></section></div>
           <section class="panel"><div class="section-heading"><div><h3>访问趋势</h3><p>{{ trendRangeLabel }} · 策略放行次数</p></div><div class="toolbar"><select v-model.number="trendRange" aria-label="趋势范围"><option :value="10">10 分钟</option><option :value="30">30 分钟</option><option :value="60">1 小时</option><option :value="180">3 小时</option><option :value="360">6 小时</option><option :value="720">12 小时</option><option :value="1440">24 小时</option></select><select v-model.number="trendInterval" aria-label="趋势统计间隔"><option :value="30">30 秒</option><option :value="60">1 分钟</option><option :value="300">5 分钟</option><option :value="600">10 分钟</option><option :value="1800">30 分钟</option></select><span class="legend"><span class="dot live"></span>已放行请求</span></div></div><div class="chart-scroll"><svg class="line-chart" :width="Math.max(720, buckets.length * 54)" height="220" role="img" :aria-label="trendRangeLabel + '放行 ' + admitted + ' 次'"><polyline :points="buckets.map((b, i) => (i * 54 + 30) + ',' + (190 - b.count / maximum * 160)).join(' ')" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /><circle v-for="(bucket, i) in buckets" :key="bucket.label + i" :cx="i * 54 + 30" :cy="190 - bucket.count / maximum * 160" r="4" fill="var(--accent)" /><text v-for="(bucket, i) in buckets" :key="'label-' + bucket.label + i" :x="i * 54 + 30" y="214" text-anchor="middle">{{ bucket.label }}</text></svg></div></section>
           <div class="endpoints"><section class="endpoint"><span class="endpoint-icon"><Globe2 :size="22" /></span><div><h3>HTTP / HTTPS</h3><code>{{ saved.http_host }}:{{ saved.http_port }}</code></div><span class="pill">CONNECT</span></section><section class="endpoint"><span class="endpoint-icon"><Network :size="22" /></span><div><h3>SOCKS5</h3><code>{{ saved.socks_host }}:{{ saved.socks_port }}</code></div><span class="pill">TCP</span></section></div>
@@ -207,10 +209,16 @@ onUnmounted(() => { disposed = true; clearTimeout(timer) })
 .line-chart { display: block; min-width: 720px; }
 .line-chart text { fill: var(--muted); font-size: 10px; }
 .service-endpoints { display:flex; gap:14px; margin-top:10px; color:var(--muted); font:10px "SFMono-Regular",Consolas,monospace; }
+.interface-list { display:grid; gap:8px; }
+.interface-row { display:grid; grid-template-columns: minmax(120px, 1fr) 64px minmax(0, 2fr); gap:12px; align-items:center; padding:10px 12px; background:var(--raised); border-radius:7px; }
+.interface-kind { font-size:12px; font-weight:600; }
+.interface-name { color:var(--muted); font-size:11px; }
+.interface-addresses { min-width:0; color:var(--text); font-size:11px; overflow-wrap:anywhere; }
 .notice .undo { color:var(--accent); font-weight:600; padding:4px 8px; background:none; border:0; }
 .gist-sync-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 22px; row-gap: 18px; }
 .gist-sync-actions { justify-content: flex-start; flex-wrap: wrap; margin-top: 18px; }
 .gist-sync-actions .muted { margin-left: 4px; }
 @media (max-width:700px) { .service-endpoints { flex-direction:column; gap:4px; } .status-text { min-width:0; } .service-endpoints span { overflow:hidden; text-overflow:ellipsis; } }
 @media (max-width:700px) { .gist-sync-grid { grid-template-columns: 1fr; } .gist-sync-actions { align-items: stretch; } .gist-sync-actions button, .gist-sync-actions .muted { width: 100%; } }
+@media (max-width:700px) { .interface-row { grid-template-columns: 1fr auto; gap:5px 10px; } .interface-addresses { grid-column: 1 / -1; } }
 </style>

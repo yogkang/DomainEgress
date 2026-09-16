@@ -30,6 +30,25 @@ struct Snapshot {
     message: Option<String>,
     ssh_running: bool,
     ssh_local_port: Option<u16>,
+    interfaces: Vec<NetworkInterface>,
+}
+#[derive(Clone, Serialize)]
+struct NetworkInterface { name: String, kind: String, addresses: Vec<String> }
+fn local_interfaces() -> Vec<NetworkInterface> {
+    let output = Command::new("/usr/sbin/networksetup").arg("-listallhardwareports").output().ok();
+    let text = output.map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+    let mut result = Vec::new(); let mut kind = String::new(); let mut device = String::new();
+    for line in text.lines().chain(std::iter::once("")) {
+        if let Some(value) = line.strip_prefix("Hardware Port: ") { kind = value.trim().to_string(); }
+        if let Some(value) = line.strip_prefix("Device: ") { device = value.trim().to_string(); }
+        if line.is_empty() && !device.is_empty() {
+            let body = Command::new("/sbin/ifconfig").arg(&device).output().ok().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+            let addresses = body.lines().filter_map(|line| { let fields: Vec<_> = line.split_whitespace().collect(); if fields.first() == Some(&"inet") || fields.first() == Some(&"inet6") { fields.get(1).map(|x| x.to_string()) } else { None } }).collect::<Vec<_>>();
+            if !addresses.is_empty() { result.push(NetworkInterface { name: device.clone(), kind: kind.clone(), addresses }); }
+            kind.clear(); device.clear();
+        }
+    }
+    result
 }
 #[tauri::command]
 fn snapshot(state: State<AppState>) -> Snapshot {
@@ -41,6 +60,7 @@ fn snapshot(state: State<AppState>) -> Snapshot {
         message: state.message.lock().take(),
         ssh_running: state.ssh.is_running(),
         ssh_local_port: state.ssh.local_port(),
+        interfaces: local_interfaces(),
     }
 }
 fn keychain_service() -> &'static str { "com.domainegress.client.ssh" }
