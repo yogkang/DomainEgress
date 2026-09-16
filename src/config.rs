@@ -54,6 +54,12 @@ pub struct Config {
     pub active_ssh_profile: Option<String>,
     #[serde(default)]
     pub icloud_sync_enabled: bool,
+    #[serde(default)]
+    pub gist_provider: String,
+    #[serde(default)]
+    pub gist_id: String,
+    #[serde(default = "default_gist_file_name")]
+    pub gist_file_name: String,
     #[serde(skip)]
     pub ssh_proxy_port: Option<u16>,
 }
@@ -156,6 +162,9 @@ impl Default for Config {
             ssh_profiles: Vec::new(),
             active_ssh_profile: None,
             icloud_sync_enabled: false,
+            gist_provider: "github".into(),
+            gist_id: String::new(),
+            gist_file_name: "domain-egress-rules.json".into(),
             ssh_proxy_port: None,
         }
     }
@@ -167,6 +176,7 @@ fn default_log_retention_days() -> u32 {
     30
 }
 fn default_trend_retention_days() -> u32 { 21 }
+fn default_gist_file_name() -> String { "domain-egress-rules.json".into() }
 fn default_ssh_auth() -> String { "agent".into() }
 impl Config {
     fn path() -> PathBuf {

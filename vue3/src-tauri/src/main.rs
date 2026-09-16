@@ -9,7 +9,7 @@ mod ssh;
 
 use config::Config;
 use parking_lot::{Mutex, RwLock};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf, process::Command, sync::Arc};
 use tauri::{Manager, State};
 
@@ -156,6 +156,44 @@ fn update_tray_status(state: &AppState, running: bool) {
     if let Some(item) = state.tray_status.lock().as_ref() {
         let _ = item.set_text(if running { "🟢 运行中" } else { "⚪ 已停止" });
     }
+}
+#[derive(Serialize, Deserialize)]
+struct GistRules {
+    format: String,
+    version: u32,
+    whitelist: Vec<String>,
+    blacklist: Vec<String>,
+}
+fn gist_api_url(provider: &str, gist_id: &str) -> Result<String, String> {
+    if gist_id.trim().is_empty() { return Err("请填写 Gist ID".into()); }
+    match provider {
+        "github" => Ok(format!("https://api.github.com/gists/{}", gist_id.trim())),
+        "gitee" => Ok(format!("https://gitee.com/api/v5/gists/{}", gist_id.trim())),
+        _ => Err("不支持的 Gist 服务商".into()),
+    }
+}
+fn gist_request(url: &str, token: &str, method: &str, body: Option<String>) -> Result<serde_json::Value, String> {
+    let mut command = Command::new("/usr/bin/curl");
+    command.args(["-sS", "-f", "-X", method, "-H", "Accept: application/json"]);
+    if !token.trim().is_empty() { command.args(["-H", &format!("Authorization: token {}", token.trim())]); }
+    if let Some(body) = body { command.args(["-H", "Content-Type: application/json", "--data-raw", &body]); }
+    let output = command.arg(url).output().map_err(|e| format!("请求 Gist 失败：{e}"))?;
+    if !output.status.success() { return Err(String::from_utf8_lossy(&output.stderr).trim().to_string()); }
+    serde_json::from_slice(&output.stdout).map_err(|e| format!("Gist 返回格式无效：{e}"))
+}
+#[tauri::command]
+fn gist_pull(provider: String, gist_id: String, file_name: String, token: String) -> Result<GistRules, String> {
+    let response = gist_request(&gist_api_url(&provider, &gist_id)?, &token, "GET", None)?;
+    let file = response.get("files").and_then(|files| files.get(&file_name)).and_then(|file| file.get("content")).and_then(|content| content.as_str()).ok_or_else(|| format!("Gist 中未找到文件：{file_name}"))?;
+    serde_json::from_str(file).map_err(|e| format!("规则文件格式无效：{e}"))
+}
+#[tauri::command]
+fn gist_push(provider: String, gist_id: String, file_name: String, token: String, config: Config) -> Result<(), String> {
+    if token.trim().is_empty() { return Err("推送 Gist 需要访问令牌".into()); }
+    let rules = GistRules { format: "domain-egress-rules".into(), version: 1, whitelist: config.whitelist, blacklist: config.blacklist };
+    let content = serde_json::to_string_pretty(&rules).map_err(|e| e.to_string())?;
+    let body = serde_json::json!({ "files": { file_name: { "content": content } } }).to_string();
+    gist_request(&gist_api_url(&provider, &gist_id)?, &token, "PATCH", Some(body)).map(|_| ())
 }
 #[tauri::command]
 fn clear_logs(state: State<AppState>) {
@@ -351,6 +389,8 @@ fn main() {
             save_config,
             set_running,
             clear_logs,
+            gist_pull,
+            gist_push,
             list_ports,
             terminate_process
             ,keychain_set, keychain_delete, icloud_status, icloud_sync, icloud_read

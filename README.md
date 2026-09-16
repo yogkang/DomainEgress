@@ -6,6 +6,8 @@ Rust + Tauri 2 + Vue 3 macOS 本地代理客户端，提供 HTTP/HTTPS CONNECT �
 
 内置白名单支持 GitHub Gist（`gist.github.com`、`gist.githubusercontent.com`）和 Gitee 在线代码片段（`gitee.com`）。
 
+应用设置支持 GitHub Gist 和 Gitee 代码片段的规则推送与拉取。Token 仅用于当前请求，不保存到配置文件；拉取规则会先合并到草稿，保存配置后才生效。
+
 ## GitHub Release 与 Homebrew
 
 推送版本 tag 后，GitHub Actions 会分别构建 macOS Apple Silicon（arm64）和 Intel（x86_64）安装包，并创建 Draft Release：
