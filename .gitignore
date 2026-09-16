@@ -1,6 +1,7 @@
 /target/
 
 # Shared Rust sources used by the Tauri desktop application
+/src/main.rs
 /Cargo.toml
 /Cargo.lock
 
