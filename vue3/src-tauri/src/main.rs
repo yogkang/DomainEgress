@@ -47,7 +47,7 @@ struct NetworkInterface { name: String, kind: String, addresses: Vec<String> }
 struct PublicIpProbe { ip: Option<String>, sources: Vec<String>, confidence: String, error: Option<String> }
 #[derive(Clone, Serialize)]
 struct UpdateInfo { current_version: String, latest_version: Option<String>, release_url: Option<String>, available: bool, error: Option<String> }
-const APP_VERSION: &str = "0.1.2";
+const APP_VERSION: &str = "0.2.0";
 fn version_tuple(value: &str) -> Option<(u64, u64, u64)> {
     let values = value.trim().trim_start_matches('v').split('.').map(|part| part.split('-').next().unwrap_or(part).parse::<u64>().ok()).collect::<Option<Vec<_>>>()?;
     (values.len() >= 3).then_some((values[0], values[1], values[2]))
