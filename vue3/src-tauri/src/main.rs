@@ -287,7 +287,7 @@ fn main() {
             let menu = Menu::with_items(app, &[&show, &start, &stop, &quit])?;
             TrayIconBuilder::new()
                 .icon(tauri::image::Image::from_bytes(include_bytes!(
-                    "../../../assets/domain-egress.png"
+                    "../icons/icon.png"
                 ))?)
                 .tooltip("DomainEgress")
                 .menu(&menu)

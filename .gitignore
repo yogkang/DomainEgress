@@ -1,7 +1,6 @@
 /target/
 
-# Legacy Rust/eframe UI (the maintained desktop UI is under vue3/)
-/src/
+# Shared Rust sources used by the Tauri desktop application
 /Cargo.toml
 /Cargo.lock
 
