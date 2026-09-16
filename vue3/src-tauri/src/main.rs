@@ -47,7 +47,7 @@ struct NetworkInterface { name: String, kind: String, addresses: Vec<String> }
 struct PublicIpProbe { ip: Option<String>, sources: Vec<String>, confidence: String, error: Option<String> }
 #[derive(Clone, Serialize)]
 struct UpdateInfo { current_version: String, latest_version: Option<String>, release_url: Option<String>, available: bool, error: Option<String> }
-const APP_VERSION: &str = "0.2.0";
+const APP_VERSION: &str = "0.2.1";
 fn version_tuple(value: &str) -> Option<(u64, u64, u64)> {
     let values = value.trim().trim_start_matches('v').split('.').map(|part| part.split('-').next().unwrap_or(part).parse::<u64>().ok()).collect::<Option<Vec<_>>>()?;
     (values.len() >= 3).then_some((values[0], values[1], values[2]))
@@ -270,7 +270,9 @@ fn set_running(running: bool, state: State<AppState>) -> Result<(), String> {
 }
 #[tauri::command]
 fn ssh_forward_start(id: String, state: State<AppState>) -> Result<u16, String> {
-    let rule = state.config.read().ssh_forwards.iter().find(|rule| rule.id == id).cloned().ok_or_else(|| "SSH 转发配置不存在".to_string())?;
+    let config_snapshot = state.config.read().clone();
+    let mut rule = config_snapshot.ssh_forwards.iter().find(|rule| rule.id == id).cloned().ok_or_else(|| "SSH 转发配置不存在".to_string())?;
+    rule.ssh_options.extend(config_snapshot.ssh_forward_options);
     let port = state.ssh_forward.start(&rule).map_err(|e| e.to_string())?;
     let mut config = state.config.read().clone();
     if let Some(item) = config.ssh_forwards.iter_mut().find(|item| item.id == id) { item.local_port = Some(port); }
@@ -440,7 +442,8 @@ fn main() {
             let ssh_forward = ssh_forward::SshForwardManager::new();
             if config.auto_start {
                 for rule in config.ssh_forwards.iter().filter(|rule| rule.auto_start) {
-                    if let Err(error) = ssh_forward.start(rule) { message = Some(format!("SSH 转发 {} 自动启动失败：{error}", rule.name)); }
+                    let mut effective = rule.clone(); effective.ssh_options.extend(config.ssh_forward_options.clone());
+                    if let Err(error) = ssh_forward.start(&effective) { message = Some(format!("SSH 转发 {} 自动启动失败：{error}", rule.name)); }
                 }
             }
             if config.auto_start {

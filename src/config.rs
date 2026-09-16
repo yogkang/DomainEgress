@@ -51,6 +51,8 @@ pub struct SshForwardRule {
     pub ssh_keychain_id: Option<String>,
     #[serde(default)]
     pub auto_start: bool,
+    #[serde(default)]
+    pub ssh_options: Vec<String>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -77,6 +79,8 @@ pub struct Config {
     pub ssh_profiles: Vec<SshProfile>,
     #[serde(default)]
     pub ssh_forwards: Vec<SshForwardRule>,
+    #[serde(default)]
+    pub ssh_forward_options: Vec<String>,
     #[serde(default)]
     pub active_ssh_profile: Option<String>,
     #[serde(default)]
@@ -188,6 +192,7 @@ impl Default for Config {
             blacklist_added_at: HashMap::new(),
             ssh_profiles: Vec::new(),
             ssh_forwards: Vec::new(),
+            ssh_forward_options: Vec::new(),
             active_ssh_profile: None,
             icloud_sync_enabled: false,
             gist_provider: "github".into(),
