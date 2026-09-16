@@ -30,6 +30,15 @@ const blocked = computed(() => logs.value.filter(l => l.outcome === '拦截').le
 const date = (t: number) => t ? new Date(t * 1000).toLocaleString('zh-CN', { hour12: false }) : '历史规则'
 const ruleDate = (t: number) => t ? date(t) : '内置规则'
 function notify(message: string, failed = false) { notice.value = message; error.value = failed }
+async function handleCopyClick(event: MouseEvent) {
+  contextMenu.value = null
+  const target = event.target as HTMLElement
+  if (target.closest('button, input, textarea, select, a')) return
+  const element = target.closest('code, .mono, .interface-addresses, .service-endpoints span, .public-ip-result strong') as HTMLElement | null
+  const value = element?.innerText?.trim()
+  if (!value || !desktop) return
+  try { await navigator.clipboard.writeText(value); notify(`已复制：${value}`) } catch { notify('复制失败，请检查系统剪贴板权限', true) }
+}
 async function probePublicIp() { publicIpBusy.value = true; try { publicIp.value = await call<PublicIpProbe>('probe_public_ip') } catch (e) { publicIp.value = { ip: null, sources: [], confidence: '探测失败', error: String(e) } } finally { publicIpBusy.value = false } }
 async function checkUpdate() { if (!desktop) return; updateBusy.value = true; try { updateInfo.value = await call<UpdateInfo>('check_update') } catch (e) { updateInfo.value = { current_version: '0.1.1', latest_version: null, release_url: null, available: false, error: String(e) } } finally { updateBusy.value = false } }
 async function openUpdate() { if (updateInfo.value?.release_url) await call('open_update', { url: updateInfo.value.release_url }) }
@@ -124,7 +133,7 @@ onUnmounted(() => { disposed = true; clearTimeout(timer) })
 </script>
 
 <template>
-  <div class="app-shell" @click="contextMenu = null">
+  <div class="app-shell" @click="handleCopyClick">
     <aside class="sidebar">
       <div class="brand"><span class="brand-mark"><Globe2 :size="24" /></span><div>DomainEgress<small>本地网络访问控制</small></div></div>
       <div class="nav-label">工作空间</div>
