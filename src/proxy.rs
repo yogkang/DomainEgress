@@ -287,7 +287,11 @@ async fn handle_http(
                 outcome: "拦截".into(),
             },
         );
-        c.write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n").await?;
+        if f.starts_with("CONNECT ") {
+            c.write_all(b"HTTP/1.1 200 Connection Established\r\nConnection: close\r\n\r\n").await?;
+        } else {
+            c.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await?;
+        }
         return Ok(());
     }
     record(
@@ -377,7 +381,7 @@ async fn handle_socks(
                 outcome: "拦截".into(),
             },
         );
-        c.write_all(&[5, 2, 0, 1, 0, 0, 0, 0, 0, 0]).await?;
+        c.write_all(&[5, 0, 0, 1, 0, 0, 0, 0, 0, 0]).await?;
         return Ok(());
     }
     record(
@@ -435,7 +439,7 @@ mod lifecycle_tests {
             .unwrap();
         let mut response = [0u8; 256];
         let n = denied.read(&mut response).unwrap();
-        assert!(String::from_utf8_lossy(&response[..n]).contains("403 Forbidden"));
+        assert!(String::from_utf8_lossy(&response[..n]).contains("200 Connection Established"));
         // A real local echo server exercises CONNECT and SOCKS TCP forwarding.
         let upstream = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let upstream_port = upstream.local_addr().unwrap().port();
