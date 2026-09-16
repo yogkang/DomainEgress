@@ -138,7 +138,7 @@ onUnmounted(() => { disposed = true; clearTimeout(timer) })
       <div class="brand"><span class="brand-mark"><Globe2 :size="24" /></span><div>DomainEgress<small>本地网络访问控制</small></div></div>
       <div class="nav-label">工作空间</div>
       <nav aria-label="主导航"><button v-for="item in tabs" :key="item.id" :class="{ active: tab === item.id }" @click="navigate(item.id)"><component :is="item.icon" :size="18" /><span>{{ item.title }}</span><ChevronRight v-if="tab === item.id" :size="15" /></button></nav>
-      <div class="sidebar-bottom"><div class="local-badge"><span class="dot" :class="{ live: running }"></span>{{ running ? '代理正在运行' : '代理已停止' }}</div><p>本地网络安全代理</p><span class="version">DESKTOP / 0.1.1</span></div>
+      <div class="sidebar-bottom"><div class="local-badge"><span class="dot" :class="{ live: running }"></span>{{ running ? '代理正在运行' : '代理已停止' }}</div><p>本地网络安全代理</p><span class="version">DESKTOP / 0.1.1</span><button class="sidebar-update" :disabled="updateBusy || !desktop" @click="checkUpdate"><RefreshCw :size="13" :class="{ spin: updateBusy }" />{{ updateBusy ? '检查中…' : '检查更新' }}</button><small v-if="updateInfo?.available" class="sidebar-update-hint">发现新版本 v{{ updateInfo.latest_version }}</small><small v-else-if="updateInfo && !updateInfo.error" class="sidebar-update-hint">当前已是最新版本</small></div>
     </aside>
     <main>
       <header><div class="breadcrumb">工作空间 <ChevronRight :size="13" /> <span>{{ tabs.find(t => t.id === tab)?.title }}</span></div><div class="header-right"><span class="desktop-label">{{ desktop ? '本机桌面' : '界面预览' }}</span><span class="dot" :class="{ live: connected && desktop }"></span>{{ desktop ? (connected ? '核心已连接' : '连接中断') : '未连接核心' }}</div></header>
@@ -202,6 +202,9 @@ onUnmounted(() => { disposed = true; clearTimeout(timer) })
 <style scoped>
 :global(body) { overflow-x: hidden; }
 .content { padding-top: 22px; }
+.sidebar-update { margin-top: 10px; padding: 5px 0; border:0; background:transparent; color:var(--muted); font-size:10px; }
+.sidebar-update:hover { color:var(--accent); background:transparent; }
+.sidebar-update-hint { display:block; margin-top:3px; color:var(--accent); font-size:9px; }
 .page-heading { margin-bottom: 17px; }
 .page-heading h1 { line-height: 1.3; }
 .page-heading p { margin-top: 3px; line-height: 1.55; }
