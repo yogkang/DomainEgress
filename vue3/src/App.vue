@@ -201,6 +201,10 @@ onUnmounted(() => { disposed = true; clearTimeout(timer) })
 
 <style scoped>
 :global(body) { overflow-x: hidden; }
+.content { padding-top: 22px; }
+.page-heading { margin-bottom: 17px; }
+.page-heading h1 { line-height: 1.3; }
+.page-heading p { margin-top: 3px; line-height: 1.55; }
 .context-menu { position: fixed; z-index: 30; background: var(--surface); border: 1px solid var(--border); border-radius: 7px; padding: 5px; box-shadow: 0 8px 24px var(--shadow); }
 .context-menu button { border: 0; width: 100%; }
 .context-menu { min-width: 280px; max-width: min(360px, calc(100vw - 24px)); padding: 12px; }
