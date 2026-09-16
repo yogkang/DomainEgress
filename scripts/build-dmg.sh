@@ -20,5 +20,5 @@ trap 'rm -rf "$STAGE"' EXIT
 mkdir -p "$DMG_DIR"
 cp -R "$APP_SOURCE" "$STAGE/DomainEgress.app"
 cp "$DOC_SOURCE" "$STAGE/DomainEgress-使用说明.md"
-hdiutil create -volname "DomainEgress" -srcfolder "$STAGE" -ov -format UDZO "$DMG_PATH" >/dev/null
+diskutil image create from --volname "DomainEgress" --format UDZO "$STAGE" "$DMG_PATH" >/dev/null
 echo "已生成：$DMG_PATH"
