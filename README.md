@@ -13,11 +13,35 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-Homebrew Cask 模板位于 [`homebrew/Casks/domain-egress.rb`](homebrew/Casks/domain-egress.rb)。发布新版本后，将其复制到 `yogkang/homebrew-tap` 仓库的 `Casks/domain-egress.rb`，更新 `version` 和两个架构对应的 SHA-256，然后用户可通过以下命令安装：
+Homebrew Cask 模板位于 [`homebrew/Casks/domain-egress.rb`](homebrew/Casks/domain-egress.rb)。发布新版本后，将其复制到 `yogkang/homebrew-tap` 仓库的 `Casks/domain-egress.rb`，更新 `version` 和两个架构对应的 SHA-256。
+
+### 使用 Homebrew 安装
+
+当前通过个人 tap 分发，支持 Apple Silicon 和 Intel Mac：
 
 ```bash
 brew tap yogkang/tap
 brew install --cask domain-egress
+```
+
+验证安装：
+
+```bash
+brew info --cask domain-egress
+open -a DomainEgress
+```
+
+升级和卸载：
+
+```bash
+brew upgrade --cask domain-egress
+brew uninstall --cask domain-egress
+```
+
+如果尚未添加 tap，也可以直接执行：
+
+```bash
+brew install --cask yogkang/tap/domain-egress
 ```
 
 当前发布流程尚未配置 Apple Developer ID 签名与公证；正式对外发布前应补充相关 GitHub Secrets。
