@@ -74,6 +74,7 @@ impl Default for Config {
                 "brucege.com".into(),
                 "byteacctimg.com".into(),
                 "cloudfront.net".into(),
+                "codebuddy.cn".into(),
                 "corretto.aws".into(),
                 "ctobsnssdk.com".into(),
                 "getcomposer.org".into(),
