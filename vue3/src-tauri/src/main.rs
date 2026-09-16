@@ -49,14 +49,25 @@ fn fetch_public_ip(url: &str) -> Result<String, String> {
 }
 #[tauri::command]
 fn probe_public_ip() -> PublicIpProbe {
-    let endpoints = [("ipify", "https://api.ipify.org"), ("icanhazip", "https://ipv4.icanhazip.com")];
-    let results = endpoints.iter().map(|(name, url)| (*name, fetch_public_ip(url))).collect::<Vec<_>>();
-    let valid = results.iter().filter_map(|(name, result)| result.as_ref().ok().map(|ip| (*name, ip))).collect::<Vec<_>>();
-    if valid.len() == 2 && valid[0].1 == valid[1].1 {
-        return PublicIpProbe { ip: Some(valid[0].1.clone()), sources: valid.iter().map(|(name, _)| (*name).into()).collect(), confidence: "双源一致".into(), error: None };
+    let endpoints = [
+        ("ipify", "https://api.ipify.org"),
+        ("icanhazip", "https://ipv4.icanhazip.com"),
+        ("amazon", "https://checkip.amazonaws.com"),
+        ("ident", "https://4.ident.me"),
+    ];
+    let mut results: Vec<(&str, String)> = Vec::new();
+    for (name, url) in endpoints {
+        let result = fetch_public_ip(url);
+        if let Ok(ip) = &result {
+            for (first_name, first_ip) in &results {
+                if first_ip == ip {
+                    return PublicIpProbe { ip: Some(ip.clone()), sources: vec![(*first_name).into(), name.into()], confidence: "双源一致".into(), error: None };
+                }
+            }
+            results.push((name, ip.clone()));
+        }
     }
-    let detail = results.iter().map(|(name, result)| format!("{name}: {}", result.as_ref().map(String::as_str).unwrap_or("探测失败"))).collect::<Vec<_>>().join("；");
-    PublicIpProbe { ip: None, sources: valid.iter().map(|(name, _)| (*name).into()).collect(), confidence: "未确认".into(), error: Some(format!("两个来源未返回一致的公网 IPv4（{detail}）")) }
+    PublicIpProbe { ip: None, sources: results.iter().map(|(name, _)| (*name).into()).collect(), confidence: "未确认".into(), error: Some("候选地址均未能得到两个一致的公网 IPv4 来源".into()) }
 }
 fn local_interfaces() -> Vec<NetworkInterface> {
     let output = Command::new("/usr/sbin/networksetup").arg("-listallhardwareports").output().ok();
