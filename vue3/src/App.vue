@@ -203,6 +203,8 @@ onUnmounted(() => { disposed = true; clearTimeout(timer) })
 :global(body) { overflow-x: hidden; }
 .content { padding-top: 22px; }
 .sidebar-update { margin-top: 10px; padding: 5px 0; border:0; background:transparent; color:var(--muted); font-size:10px; }
+.sidebar-bottom .version { display:block; }
+.sidebar-update { display:flex; width:max-content; justify-content:flex-start; }
 .sidebar-update:hover { color:var(--accent); background:transparent; }
 .sidebar-update-hint { display:block; margin-top:3px; color:var(--accent); font-size:9px; }
 .page-heading { margin-bottom: 17px; }
