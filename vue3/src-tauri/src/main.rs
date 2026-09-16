@@ -20,6 +20,9 @@ struct AppState {
     operation: Mutex<()>,
     tray_status: Mutex<Option<tauri::menu::MenuItem<tauri::Wry>>>,
     tray_icon: Mutex<Option<tauri::tray::TrayIcon<tauri::Wry>>>,
+    tray_menu: Mutex<Option<tauri::menu::Menu<tauri::Wry>>>,
+    tray_start: Mutex<Option<tauri::menu::MenuItem<tauri::Wry>>>,
+    tray_stop: Mutex<Option<tauri::menu::MenuItem<tauri::Wry>>>,
     message: Mutex<Option<String>>,
 }
 #[derive(Serialize)]
@@ -239,6 +242,13 @@ fn update_tray_status(state: &AppState, running: bool) {
     if let Some(item) = state.tray_status.lock().as_ref() {
         let _ = item.set_text(if running { "🟢 代理运行中" } else { "⚪ 代理已停止" });
     }
+    let menu = state.tray_menu.lock().clone();
+    let start = state.tray_start.lock().clone();
+    let stop = state.tray_stop.lock().clone();
+    if let (Some(menu), Some(start), Some(stop)) = (menu, start, stop) {
+        if running { let _ = menu.remove(&start); let _ = menu.append(&stop); }
+        else { let _ = menu.remove(&stop); let _ = menu.append(&start); }
+    }
     if let Some(icon) = state.tray_icon.lock().as_ref() {
         let bytes: &[u8] = if running { &include_bytes!("../icons/tray-running.png")[..] } else { &include_bytes!("../icons/tray-stopped.png")[..] };
         if let Ok(image) = tauri::image::Image::from_bytes(bytes) { let _ = icon.set_icon(Some(image)); }
@@ -409,6 +419,9 @@ fn main() {
                 operation: Mutex::new(()),
                 tray_status: Mutex::new(None),
                 tray_icon: Mutex::new(None),
+                tray_menu: Mutex::new(None),
+                tray_start: Mutex::new(None),
+                tray_stop: Mutex::new(None),
                 message: Mutex::new(message),
             });
             use tauri::{
@@ -430,8 +443,13 @@ fn main() {
             let start = MenuItem::with_id(app, "start", "启动代理", true, None::<&str>)?;
             let stop = MenuItem::with_id(app, "stop", "停止代理", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-            *app.state::<AppState>().tray_status.lock() = Some(status.clone());
             let menu = Menu::with_items(app, &[&show, &status, &start, &stop, &quit])?;
+            *app.state::<AppState>().tray_status.lock() = Some(status.clone());
+            *app.state::<AppState>().tray_menu.lock() = Some(menu.clone());
+            *app.state::<AppState>().tray_start.lock() = Some(start.clone());
+            *app.state::<AppState>().tray_stop.lock() = Some(stop.clone());
+            let initially_running = app.state::<AppState>().proxy.is_running();
+            if initially_running { let _ = menu.remove(&start); } else { let _ = menu.remove(&stop); }
             let initial_icon: &[u8] = if app.state::<AppState>().proxy.is_running() { &include_bytes!("../icons/tray-running.png")[..] } else { &include_bytes!("../icons/tray-stopped.png")[..] };
             let tray = TrayIconBuilder::new()
                 .icon(tauri::image::Image::from_bytes(initial_icon)?)
