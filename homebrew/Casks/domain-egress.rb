@@ -1,7 +1,7 @@
 cask "domain-egress" do
   arch arm: "aarch64", intel: "x64"
 
-  version "0.1.0"
+  version "0.1.1"
 
   sha256 arm:   "REPLACE_WITH_ARM64_SHA256",
          intel: "REPLACE_WITH_X86_64_SHA256"

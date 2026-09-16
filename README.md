@@ -4,13 +4,15 @@ Rust + Tauri 2 + Vue 3 macOS 本地代理客户端，提供 HTTP/HTTPS CONNECT �
 
 本项目采用 [MIT License](LICENSE) 开源。项目自身代码适用 MIT 协议；第三方依赖及其许可证以各自项目声明为准。
 
+内置白名单支持 GitHub Gist（`gist.github.com`、`gist.githubusercontent.com`）和 Gitee 在线代码片段（`gitee.com`）。
+
 ## GitHub Release 与 Homebrew
 
 推送版本 tag 后，GitHub Actions 会分别构建 macOS Apple Silicon（arm64）和 Intel（x86_64）安装包，并创建 Draft Release：
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
 Homebrew Cask 模板位于 [`homebrew/Casks/domain-egress.rb`](homebrew/Casks/domain-egress.rb)。发布新版本后，将其复制到 `yogkang/homebrew-tap` 仓库的 `Casks/domain-egress.rb`，更新 `version` 和两个架构对应的 SHA-256。

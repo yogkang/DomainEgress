@@ -31,6 +31,8 @@ aliyun.com
 *.aliyun.com
 ```
 
+内置白名单已包含 GitHub Gist（`gist.github.com`、`gist.githubusercontent.com`）和 Gitee（`gitee.com`）域名，可直接访问在线代码片段。
+
 匹配 `api.aliyun.com`，但不匹配 `aliyun.com` 或 `a.b.aliyun.com`。
 
 访问日志中的目标支持右键添加规则，并可同时选择多个候选规则。规则先进入草稿，点击“保存配置”后才生效。
