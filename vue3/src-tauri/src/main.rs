@@ -34,6 +34,30 @@ struct Snapshot {
 }
 #[derive(Clone, Serialize)]
 struct NetworkInterface { name: String, kind: String, addresses: Vec<String> }
+#[derive(Clone, Serialize)]
+struct PublicIpProbe { ip: Option<String>, sources: Vec<String>, confidence: String, error: Option<String> }
+fn fetch_public_ip(url: &str) -> Result<String, String> {
+    let output = Command::new("/usr/bin/curl").args(["--fail", "--silent", "--show-error", "--location", "--max-time", "10", url]).output().map_err(|e| e.to_string())?;
+    if !output.status.success() { return Err(String::from_utf8_lossy(&output.stderr).trim().to_string()); }
+    let value = String::from_utf8_lossy(&output.stdout).trim().parse::<std::net::IpAddr>().map_err(|_| "来源返回的不是有效 IP 地址".to_string())?;
+    let public = match value {
+        std::net::IpAddr::V4(ip) => !(ip.is_private() || ip.is_loopback() || ip.is_link_local() || ip.is_unspecified() || ip.is_multicast()),
+        std::net::IpAddr::V6(ip) => !(ip.is_unique_local() || ip.is_loopback() || ip.is_unicast_link_local() || ip.is_unspecified() || ip.is_multicast()),
+    };
+    if !public { return Err("来源返回的不是公网 IP 地址".into()); }
+    Ok(value.to_string())
+}
+#[tauri::command]
+fn probe_public_ip() -> PublicIpProbe {
+    let endpoints = [("ipify", "https://api.ipify.org"), ("icanhazip", "https://ipv4.icanhazip.com")];
+    let results = endpoints.iter().map(|(name, url)| (*name, fetch_public_ip(url))).collect::<Vec<_>>();
+    let valid = results.iter().filter_map(|(name, result)| result.as_ref().ok().map(|ip| (*name, ip))).collect::<Vec<_>>();
+    if valid.len() == 2 && valid[0].1 == valid[1].1 {
+        return PublicIpProbe { ip: Some(valid[0].1.clone()), sources: valid.iter().map(|(name, _)| (*name).into()).collect(), confidence: "双源一致".into(), error: None };
+    }
+    let detail = results.iter().map(|(name, result)| format!("{name}: {}", result.as_ref().map(String::as_str).unwrap_or("探测失败"))).collect::<Vec<_>>().join("；");
+    PublicIpProbe { ip: None, sources: valid.iter().map(|(name, _)| (*name).into()).collect(), confidence: "未确认".into(), error: Some(format!("两个来源未返回一致的公网 IPv4（{detail}）")) }
+}
 fn local_interfaces() -> Vec<NetworkInterface> {
     let output = Command::new("/usr/sbin/networksetup").arg("-listallhardwareports").output().ok();
     let text = output.map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
@@ -406,6 +430,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             snapshot,
+            probe_public_ip,
             save_config,
             set_running,
             clear_logs,

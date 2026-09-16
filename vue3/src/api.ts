@@ -11,6 +11,7 @@ export interface SshHop { host: string; port: number; username: string; auth: 'a
 export interface SshProfile { id: string; name: string; hops: SshHop[]; enabled: boolean }
 export interface LogEntry { timestamp: number; level: string; source: string; method: string; target: string; params: string; outcome: string }
 export interface NetworkInterface { name: string; kind: string; addresses: string[] }
+export interface PublicIpProbe { ip: string | null; sources: string[]; confidence: string; error: string | null }
 export interface Snapshot { config: Config; running: boolean; logs: LogEntry[]; traffic: number[]; message: string | null; ssh_running?: boolean; ssh_local_port?: number | null; interfaces?: NetworkInterface[] }
 export interface PortRow { port: string; pid: number; name: string; started: string; elapsed: string }
 export const desktop = isTauri()
