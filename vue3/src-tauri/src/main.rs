@@ -134,7 +134,7 @@ fn local_interfaces() -> Vec<NetworkInterface> {
         if let Some(value) = line.strip_prefix("Device: ") { device = value.trim().to_string(); }
         if line.is_empty() && !device.is_empty() {
             let body = Command::new("/sbin/ifconfig").arg(&device).output().ok().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
-            let addresses = body.lines().filter_map(|line| { let fields: Vec<_> = line.split_whitespace().collect(); if fields.first() == Some(&"inet") || fields.first() == Some(&"inet6") { fields.get(1).map(|x| x.to_string()) } else { None } }).collect::<Vec<_>>();
+            let addresses = body.lines().filter_map(|line| { let fields: Vec<_> = line.split_whitespace().collect(); if fields.first() == Some(&"inet") || fields.first() == Some(&"inet6") { fields.get(1).map(|x| x.split('%').next().unwrap_or(x).to_string()) } else { None } }).collect::<Vec<_>>();
             if !addresses.is_empty() { result.push(NetworkInterface { name: device.clone(), kind: kind.clone(), addresses }); }
             kind.clear(); device.clear();
         }
