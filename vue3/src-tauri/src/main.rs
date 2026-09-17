@@ -561,9 +561,19 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("启动 DomainEgress 失败")
         .run(|app, event| {
-            if matches!(event, tauri::RunEvent::Exit) {
-                let _ = app.state::<AppState>().proxy.stop();
-                app.state::<AppState>().ssh_forward.stop_all();
+            match event {
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Reopen { .. } => {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
+                tauri::RunEvent::Exit => {
+                    let _ = app.state::<AppState>().proxy.stop();
+                    app.state::<AppState>().ssh_forward.stop_all();
+                }
+                _ => {}
             }
         });
 }
