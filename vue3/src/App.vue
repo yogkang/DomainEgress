@@ -53,7 +53,17 @@ const admitted = computed(() => buckets.value.reduce((n, b) => n + b.count, 0))
 const blocked = computed(() => logs.value.filter(l => l.outcome === '拦截').length)
 const date = (t: number) => t ? new Date(t * 1000).toLocaleString('zh-CN', { hour12: false }) : '历史规则'
 const ruleDate = (t: number) => t ? date(t) : '内置规则'
-function notify(message: string, failed = false) { notice.value = message; error.value = failed }
+let copyNoticeTimer: ReturnType<typeof setTimeout> | undefined
+function notify(message: string, failed = false) {
+  notice.value = message
+  error.value = failed
+  clearTimeout(copyNoticeTimer)
+  if (message.startsWith('已复制：')) {
+    copyNoticeTimer = setTimeout(() => {
+      if (notice.value === message) notice.value = ''
+    }, 3000)
+  }
+}
 async function handleCopyClick(event: MouseEvent) {
   contextMenu.value = null
   const target = event.target as HTMLElement
@@ -177,7 +187,7 @@ let timer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
 async function poll() { await refresh(); if (!disposed) timer = setTimeout(poll, 1500) }
 onMounted(async () => { await refresh(true); await checkIcloud(); void probePublicIp(); void checkUpdate(); if (!disposed) timer = setTimeout(poll, 1500) })
-onUnmounted(() => { disposed = true; clearTimeout(timer) })
+onUnmounted(() => { disposed = true; clearTimeout(timer); clearTimeout(copyNoticeTimer) })
 </script>
 
 <template>
