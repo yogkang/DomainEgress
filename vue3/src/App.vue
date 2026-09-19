@@ -2,13 +2,14 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Activity, ArrowUpRight, Check, ChevronLeft, ChevronRight, CircleHelp, CircleStop, Copy, Download, Globe2, ListFilter, Network, Play, Plus, RefreshCw, Search, Settings2, ShieldCheck, Trash2, Upload, X } from 'lucide-vue-next'
 import { appearance, theme, themes, appearanceError, setAppearance, setTheme } from './theme'
-import { call, defaults, desktop, type Config, type LogEntry, type NetworkInterface, type PortRow, type PublicIpProbe, type Snapshot, type SshForwardRule, type SshProfile, type UpdateInfo } from './api'
+import { call, defaults, desktop, type Config, type EgressAddress, type LogEntry, type NetworkInterface, type PortRow, type PublicIpProbe, type Snapshot, type SshForwardRule, type SshProfile, type UpdateInfo } from './api'
 const tabs = [{ id: 'overview', title: '代理概览', icon: Activity }, { id: 'rules', title: '访问控制', icon: ShieldCheck }, { id: 'logs', title: '访问日志', icon: ListFilter }, { id: 'ports', title: '监听端口', icon: Network }, { id: 'ssh-forward', title: 'SSH 端口转发', icon: Network }, { id: 'settings', title: '应用设置', icon: Settings2 }]
 const tab = ref('overview'), config = ref<Config>(structuredClone(defaults)), saved = ref<Config>(structuredClone(defaults))
 const running = ref(false), logs = ref<LogEntry[]>([]), traffic = ref<number[]>([]), busy = ref(false), connected = ref(!desktop), initialized = ref(false), sshRunning = ref(false), sshLocalPort = ref<number | null>(null), icloudAvailable = ref(false)
 const interfaces = ref<NetworkInterface[]>([])
 const hostname = ref('本机')
-const publicIp = ref<PublicIpProbe>({ ip: null, sources: [], confidence: '未探测', error: null }), publicIpBusy = ref(false)
+const emptyEgressProbe = (): PublicIpProbe['system'] => ({ addresses: [], confidence: '未探测', error: null })
+const publicIp = ref<PublicIpProbe>({ system: emptyEgressProbe(), ipv6: null }), publicIpBusy = ref(false)
 const sshForwardPorts = ref<Record<string, number>>({})
 const sshCommand = ref('')
 const showSshCommandParser = ref(false), parsedForwardIds = ref<string[]>([])
@@ -16,6 +17,7 @@ const updateInfo = ref<UpdateInfo | null>(null), updateBusy = ref(false), update
 const notice = ref(''), error = ref(false), draft = ref(''), search = ref(''), logLevel = ref('all'), logOutcome = ref('all'), ruleSort = ref('name'), ruleSearch = ref(''), trendRange = ref(60), trendInterval = ref(60), autoScrollLogs = ref(true), trendStart = ref(''), trendEnd = ref(''), undoRule = ref<{ rules: string[]; mode: 'whitelist' | 'blacklist' } | null>(null)
 const ports = ref<PortRow[]>([]), portBusy = ref(false), portLoaded = ref(false), portSearch = ref(''), confirmAction = ref<'clear' | 'save-mode' | PortRow | null>(null), pendingSave = ref<Config | null>(null), contextMenu = ref<{ target: string; x: number; y: number; candidates: string[] } | null>(null), selectedTargets = ref<string[]>([]), sshSecrets = ref<Record<string, string>>({}), gistToken = ref(''), draggedHop = ref<{ profile: SshProfile; index: number } | null>(null)
 const logPanel = ref<HTMLElement | null>(null)
+const fontScaleChoices = [90, 100, 110, 125]
 const dirty = computed(() => JSON.stringify(config.value) !== JSON.stringify(saved.value))
 const showGlobalOptions = ref(false)
 const expandedRuleOptions = ref<Record<string, boolean>>({})
@@ -46,6 +48,10 @@ const selectedForwardRules = computed(() => groupedSshForwards.value.find(group 
 function selectForwardGroup(name: string) { selectedForwardGroup.value = selectedForwardGroup.value === name ? '' : name }
 watch(groupedSshForwards, groups => { if (!groups.some(group => group.name === selectedForwardGroup.value)) selectedForwardGroup.value = groups.at(-1)?.name || '' }, { immediate: true })
 const localAddressSummary = computed(() => [...new Set(interfaces.value.flatMap(item => item.addresses).filter(address => !address.includes(':')))].join(' · ') || '未检测到')
+const egressProbes = computed(() => [
+  { label: 'IPv4 出口', value: publicIp.value.system },
+  ...(publicIp.value.ipv6 ? [{ label: 'IPv6 出口', value: publicIp.value.ipv6 }] : []),
+])
 const buckets = computed(() => { const step = trendInterval.value; const start = Math.floor(range.value.start / step) * step; const end = Math.ceil(range.value.end / step) * step; const count = Math.min(1440, Math.max(1, Math.ceil((end - start) / step))); return Array.from({ length: count }, (_, i) => { const bucket = start + i * step; return { label: new Date(bucket * 1000).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }), count: traffic.value.filter(t => t >= bucket && t < bucket + step && t >= range.value.start && t <= range.value.end).length } }) })
 const maximum = computed(() => Math.max(1, ...buckets.value.map(b => b.count)))
 const trendRangeLabel = computed(() => trendRange.value < 60 ? `最近 ${trendRange.value} 分钟` : `最近 ${trendRange.value / 60} 小时`)
@@ -53,15 +59,32 @@ const admitted = computed(() => buckets.value.reduce((n, b) => n + b.count, 0))
 const blocked = computed(() => logs.value.filter(l => l.outcome === '拦截').length)
 const date = (t: number) => t ? new Date(t * 1000).toLocaleString('zh-CN', { hour12: false }) : '历史规则'
 const ruleDate = (t: number) => t ? date(t) : '内置规则'
-let copyNoticeTimer: ReturnType<typeof setTimeout> | undefined
+let noticeTimer: ReturnType<typeof setTimeout> | undefined
 function notify(message: string, failed = false) {
   notice.value = message
   error.value = failed
-  clearTimeout(copyNoticeTimer)
-  if (message.startsWith('已复制：')) {
-    copyNoticeTimer = setTimeout(() => {
-      if (notice.value === message) notice.value = ''
-    }, 3000)
+  clearTimeout(noticeTimer)
+  noticeTimer = setTimeout(() => {
+    if (notice.value === message) {
+      notice.value = ''
+      undoRule.value = null
+    }
+  }, 3000)
+}
+function adjustFontScale(direction: -1 | 1) {
+  const current = fontScaleChoices.indexOf(config.value.font_scale)
+  const next = Math.max(0, Math.min(fontScaleChoices.length - 1, (current < 0 ? 1 : current) + direction))
+  config.value.font_scale = fontScaleChoices[next]
+}
+function resetFontScale() { config.value.font_scale = 100 }
+function handleFontScaleShortcut(event: KeyboardEvent) {
+  if (!event.ctrlKey || event.altKey || event.metaKey) return
+  if (event.key === '+' || event.key === '=' || event.code === 'NumpadAdd') {
+    event.preventDefault(); adjustFontScale(1)
+  } else if (event.key === '-' || event.code === 'NumpadSubtract') {
+    event.preventDefault(); adjustFontScale(-1)
+  } else if (event.key === '0' || event.code === 'Numpad0') {
+    event.preventDefault(); resetFontScale()
   }
 }
 async function handleCopyClick(event: MouseEvent) {
@@ -73,7 +96,8 @@ async function handleCopyClick(event: MouseEvent) {
   if (!value || !desktop) return
   try { await navigator.clipboard.writeText(value); notify(`已复制：${value}`) } catch { notify('复制失败，请检查系统剪贴板权限', true) }
 }
-async function probePublicIp() { publicIpBusy.value = true; try { publicIp.value = await call<PublicIpProbe>('probe_public_ip') } catch (e) { publicIp.value = { ip: null, sources: [], confidence: '探测失败', error: String(e) } } finally { publicIpBusy.value = false } }
+function locationLabel(location: EgressAddress['location']) { return location ? [location.country, location.region, location.city].filter(Boolean).join(' · ') : '' }
+async function probePublicIp() { publicIpBusy.value = true; try { publicIp.value = await call<PublicIpProbe>('probe_public_ip') } catch (e) { publicIp.value = { system: { ...emptyEgressProbe(), confidence: '探测失败', error: String(e) }, ipv6: null } } finally { publicIpBusy.value = false } }
 async function checkUpdate() { if (!desktop) return; updateBusy.value = true; try { updateInfo.value = await call<UpdateInfo>('check_update') } catch (e) { updateInfo.value = { current_version: '0.2.1', latest_version: null, release_url: null, available: false, error: String(e) } } finally { updateBusy.value = false } }
 async function openUpdate() { if (updateInfo.value?.release_url) await call('open_update', { url: updateInfo.value.release_url }) }
 function localInput(t: number) { const d = new Date(t * 1000 - new Date().getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16) }
@@ -186,12 +210,12 @@ async function confirm() {
 let timer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
 async function poll() { await refresh(); if (!disposed) timer = setTimeout(poll, 1500) }
-onMounted(async () => { await refresh(true); await checkIcloud(); void probePublicIp(); void checkUpdate(); if (!disposed) timer = setTimeout(poll, 1500) })
-onUnmounted(() => { disposed = true; clearTimeout(timer); clearTimeout(copyNoticeTimer) })
+onMounted(async () => { window.addEventListener('keydown', handleFontScaleShortcut); await refresh(true); await checkIcloud(); void probePublicIp(); void checkUpdate(); if (!disposed) timer = setTimeout(poll, 1500) })
+onUnmounted(() => { window.removeEventListener('keydown', handleFontScaleShortcut); disposed = true; clearTimeout(timer); clearTimeout(noticeTimer) })
 </script>
 
 <template>
-  <div class="app-shell" @click="handleCopyClick">
+  <div class="app-shell" :style="{ '--font-scale': config.font_scale / 100 }" @click="handleCopyClick">
     <aside class="sidebar">
       <div class="brand"><span class="brand-mark"><Globe2 :size="24" /></span><div>DomainEgress<small>本地网络访问控制</small></div></div>
       <div class="nav-label">工作空间</div>
@@ -202,14 +226,14 @@ onUnmounted(() => { disposed = true; clearTimeout(timer); clearTimeout(copyNotic
       <header><div class="breadcrumb">工作空间 <ChevronRight :size="13" /> <span>{{ tabs.find(t => t.id === tab)?.title }}</span></div><div class="header-right"><span class="desktop-label">{{ desktop ? '本机桌面' : '界面预览' }}</span><span class="dot" :class="{ live: connected && desktop }"></span>{{ desktop ? (connected ? '核心已连接' : '连接中断') : '未连接核心' }}<span class="header-separator"></span><span class="host-info" :title="hostname">主机名 {{ hostname }}</span><span class="header-separator"></span><span class="host-info" :title="localAddressSummary">IPv4 {{ localAddressSummary }}</span></div></header>
       <div class="content" :class="{ 'forward-view': tab === 'ssh-forward', 'forward-menu-collapsed': forwardMenuCollapsed }">
         <div v-if="!desktop" class="preview-banner"><CircleHelp :size="17" /> 当前为浏览器界面预览。代理操作、配置保存与端口查询请使用桌面应用。</div>
-        <div class="page-heading"><div><div class="eyebrow">{{ tab === 'overview' ? 'NETWORK OVERVIEW' : tab === 'rules' ? 'ACCESS POLICY' : tab === 'logs' ? 'REQUEST LOGS' : tab === 'ports' ? 'SYSTEM NETWORK' : tab === 'ssh-forward' ? 'SSH PORT FORWARDING' : 'PREFERENCES' }}</div><h1>{{ tabs.find(t => t.id === tab)?.title }}</h1><p>{{ tab === 'overview' ? '让每一次网络访问，都在掌控之中。' : tab === 'rules' ? '定义允许或拒绝访问的域名与 IP 地址。' : tab === 'logs' ? '查看本次运行的访问决策与请求信息。' : tab === 'ports' ? '查看本机 TCP 监听端口及所属进程。' : tab === 'ssh-forward' ? '将远程服务器端口安全映射到本机访问。' : '管理代理监听地址、启动行为与日志策略。' }}</p></div><button v-if="tab === 'rules' || tab === 'settings' || tab === 'ssh-forward'" class="primary" :disabled="busy || !desktop || !initialized || !connected || !dirty" @click="save"><Check :size="16" />保存配置<span v-if="dirty" class="unsaved"></span></button><span v-else-if="tab === 'overview'" class="pill">HTTP / HTTPS / SOCKS5</span></div>
+        <div class="page-heading"><div><div class="eyebrow">{{ tab === 'overview' ? 'NETWORK OVERVIEW' : tab === 'rules' ? 'ACCESS POLICY' : tab === 'logs' ? 'REQUEST LOGS' : tab === 'ports' ? 'SYSTEM NETWORK' : tab === 'ssh-forward' ? 'SSH PORT FORWARDING' : 'PREFERENCES' }}</div><h1>{{ tabs.find(t => t.id === tab)?.title }}</h1><p>{{ tab === 'overview' ? '让每一次网络访问，都在掌控之中。' : tab === 'rules' ? '定义允许或拒绝访问的域名与 IP 地址。' : tab === 'logs' ? '查看本次运行的访问决策与请求信息。' : tab === 'ports' ? '查看本机 TCP 监听端口及所属进程。' : tab === 'ssh-forward' ? '将远程服务器端口安全映射到本机访问。' : '管理代理监听地址、启动行为与日志策略。' }}</p></div><div class="page-heading-actions"><button v-if="tab === 'rules' || tab === 'settings' || tab === 'ssh-forward' || (tab === 'overview' && dirty)" class="primary" :disabled="busy || !desktop || !initialized || !connected || !dirty" @click="save"><Check :size="16" />保存配置<span v-if="dirty" class="unsaved"></span></button><span v-if="tab === 'overview'" class="pill">HTTP / HTTPS / SOCKS5</span></div></div>
         <div v-if="notice" class="notice" :class="{ error }" role="status"><span>{{ notice }}</span><button v-if="undoRule" class="undo" @click="undoLastRule">撤销</button><button aria-label="关闭提示" @click="notice = ''"><X :size="16" /></button></div>
         <div v-if="dirty" class="draft-banner">有未保存的修改，保存后生效。<button @click="discard">撤销修改</button></div>
         <div v-if="updateInfo?.available && !updateDismissed" class="update-banner"><RefreshCw :size="17" /><span>发现新版本 <strong>v{{ updateInfo.latest_version }}</strong>，当前版本 v{{ updateInfo.current_version }}。</span><button class="primary" @click="openUpdate">查看更新</button><button class="update-dismiss" aria-label="稍后提醒" @click="updateDismissed = true">稍后</button></div>
 
         <template v-if="tab === 'overview'">
-          <section class="status-card"><div class="status-icon" :class="{ stopped: !running }"><ShieldCheck :size="32" /></div><div class="status-text"><span class="section-label">代理服务</span><h2>{{ running ? '连接已就绪' : '准备好安全连接' }}<span class="pill" :class="{ green: running }">{{ running ? '运行中' : '已停止' }}</span></h2><p>{{ running ? '正在根据访问策略处理本机代理请求' : '启动代理，为网络访问应用你的准出策略' }}</p><div class="service-endpoints"><span>HTTP/HTTPS {{ saved.http_host }}:{{ saved.http_port }}</span><span>SOCKS5 {{ saved.socks_host }}:{{ saved.socks_port }}</span></div></div><button :class="running ? 'secondary' : 'primary'" :disabled="busy || !desktop || !connected" @click="toggle"><CircleStop v-if="running" :size="15" /><Play v-else :size="15" />{{ running ? '停止代理' : '启动代理' }}</button></section>
-          <section class="panel network-summary"><div class="section-heading"><div><h3>网络地址</h3><p>本机网卡地址与外网出口 IP。</p></div><Network :size="21" class="muted" /></div><div class="network-summary-grid"><div class="network-block"><h4>本机网卡地址</h4><p>当前电脑有线与无线网卡的内网地址。</p><div v-if="interfaces.length" class="interface-list"><div v-for="item in interfaces" :key="item.name" class="interface-row"><span class="interface-kind">{{ item.kind || item.name }}</span><span class="interface-name mono">{{ item.name }}</span><span class="interface-addresses"><span v-for="address in item.addresses" :key="address" class="interface-address mono"><span class="address-family">{{ address.includes(':') ? 'IPv6' : 'IPv4' }}</span>{{ address }}</span></span></div></div><div v-else class="empty">暂未检测到本机网卡地址</div></div><div class="network-block public-ip-block"><div class="network-block-heading"><div><h4>外网出口 IP</h4><p>通过两个独立来源探测，结果一致才标记为可信。</p></div><button :disabled="publicIpBusy || !desktop" @click="probePublicIp"><RefreshCw :size="15" :class="{ spin: publicIpBusy }" />{{ publicIpBusy ? '探测中…' : '双源探测' }}</button></div><div class="public-ip-result"><strong v-if="publicIp.ip" class="mono">{{ publicIp.ip }}</strong><span v-else class="muted">{{ publicIp.error || '尚未探测' }}</span><span class="pill" :class="{ green: publicIp.confidence === '双源一致', red: publicIp.error }">{{ publicIp.confidence }}</span></div><p class="footnote">来源：{{ publicIp.sources.length ? publicIp.sources.join('、') : '—' }} · 结果仅供当前网络诊断参考。</p></div></div></section>
+          <section class="status-card"><div class="status-icon" :class="{ stopped: !running }"><ShieldCheck :size="32" /></div><div class="status-text"><span class="section-label">代理服务</span><h2>{{ running ? '连接已就绪' : '准备好安全连接' }}<span class="pill" :class="{ green: running }">{{ running ? '运行中' : '已停止' }}</span></h2><p>{{ running ? '正在根据访问策略处理本机代理请求' : '启动代理，为网络访问应用你的准出策略' }}</p><div class="service-endpoints"><span>HTTP/HTTPS {{ saved.http_host }}:{{ saved.http_port }}</span><span>SOCKS5 {{ saved.socks_host }}:{{ saved.socks_port }}</span></div></div><div class="status-actions"><button :class="running ? 'secondary' : 'primary'" :disabled="busy || !desktop || !connected" @click="toggle"><CircleStop v-if="running" :size="15" /><Play v-else :size="15" />{{ running ? '停止代理' : '启动代理' }}</button><label class="overview-auto-start"><input v-model="config.auto_start" type="checkbox" role="switch" aria-label="随应用自动启动代理"><span><strong>随应用自动启动代理</strong><small>{{ config.auto_start ? '已开启，保存配置后生效' : '默认关闭' }}</small></span></label></div></section>
+          <section class="panel network-summary"><div class="section-heading"><div><h3>网络地址</h3><p>本机网卡地址与系统外网出口 IP。</p></div><Network :size="21" class="muted" /></div><div class="network-summary-grid"><div class="network-block"><h4>本机网卡地址</h4><p>当前电脑有线与无线网卡的内网地址。</p><div v-if="interfaces.length" class="interface-list"><div v-for="item in interfaces" :key="item.name" class="interface-row"><span class="interface-kind">{{ item.kind || item.name }}</span><span class="interface-name mono">{{ item.name }}</span><span class="interface-addresses"><span v-for="address in item.addresses" :key="address" class="interface-address mono"><span class="address-family">{{ address.includes(':') ? 'IPv6' : 'IPv4' }}</span>{{ address }}</span></span></div></div><div v-else class="empty">暂未检测到本机网卡地址</div></div><div class="network-block public-ip-block"><div class="network-block-heading"><div><h4>外网出口 IP</h4><p>HTTP 与 DNS/TCP 分别探测；相同只显示一个地址，不同则并列显示。</p></div><button :disabled="publicIpBusy || !desktop" @click="probePublicIp"><RefreshCw :size="15" :class="{ spin: publicIpBusy }" />{{ publicIpBusy ? '探测中…' : '双源探测' }}</button></div><div v-for="egress in egressProbes" :key="egress.label" class="public-ip-result"><div><span class="pill">{{ egress.label }}</span><span v-if="!egress.value.addresses.length" class="muted">{{ egress.value.error || '尚未探测' }}</span></div><span class="pill" :class="{ green: egress.value.confidence === 'HTTP 与 DNS 一致', red: egress.value.confidence === 'HTTP 与 DNS 不一致' || egress.value.confidence === '探测失败' }">{{ egress.value.confidence }}</span><div v-for="address in egress.value.addresses" :key="address.source" class="probe-address"><div><strong class="mono">{{ address.ip }}</strong><span class="location-meta">{{ address.source }}</span></div><template v-if="address.location"><span class="location-value">{{ locationLabel(address.location) }}</span><span class="location-meta">{{ address.location.confidence }} · {{ address.location.source }}<template v-if="address.location.isp"> · {{ address.location.isp }}</template></span></template><span v-else class="location-meta">归属地暂不可用</span></div><span v-if="egress.value.error && egress.value.addresses.length" class="location-meta">{{ egress.value.error }}</span></div><p class="footnote">DNS 使用 TCP 连接 OpenDNS（208.67.222.222）；在线归属地查询会将出口 IP 发送至第三方服务。</p></div></div></section>
           <div class="metrics"><section class="metric"><span>当前访问策略<ShieldCheck :size="17" /></span><strong>{{ saved.access_mode === 'whitelist' ? '白名单' : '黑名单' }}<small>模式</small></strong><p>{{ saved[saved.access_mode].length }} 条已保存规则<button @click="navigate('rules')">管理规则 <ArrowUpRight :size="14" /></button></p></section><section class="metric"><span>{{ trendRangeLabel }}放行<ArrowUpRight :size="17" /></span><strong>{{ admitted.toLocaleString() }}<small>次</small></strong><p>按当前趋势范围统计</p></section><section class="metric"><span>已记录的拦截<ShieldCheck :size="17" /></span><strong>{{ blocked.toLocaleString() }}<small>次</small></strong><p>当前内存日志中的拦截记录</p></section></div>
           <section class="panel"><div class="section-heading"><div><h3>访问趋势</h3><p>{{ trendRangeLabel }} · 策略放行次数</p></div><div class="toolbar"><select v-model.number="trendRange" aria-label="趋势范围"><option :value="10">10 分钟</option><option :value="30">30 分钟</option><option :value="60">1 小时</option><option :value="180">3 小时</option><option :value="360">6 小时</option><option :value="720">12 小时</option><option :value="1440">24 小时</option></select><select v-model.number="trendInterval" aria-label="趋势统计间隔"><option :value="30">30 秒</option><option :value="60">1 分钟</option><option :value="300">5 分钟</option><option :value="600">10 分钟</option><option :value="1800">30 分钟</option></select><span class="legend"><span class="dot live"></span>已放行请求</span></div></div><div class="chart-scroll"><svg class="line-chart" :width="Math.max(720, buckets.length * 54)" height="220" role="img" :aria-label="trendRangeLabel + '放行 ' + admitted + ' 次'"><polyline :points="buckets.map((b, i) => (i * 54 + 30) + ',' + (190 - b.count / maximum * 160)).join(' ')" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /><circle v-for="(bucket, i) in buckets" :key="bucket.label + i" :cx="i * 54 + 30" :cy="190 - bucket.count / maximum * 160" r="4" fill="var(--accent)" /><text v-for="(bucket, i) in buckets" :key="'label-' + bucket.label + i" :x="i * 54 + 30" y="214" text-anchor="middle">{{ bucket.label }}</text></svg></div></section>
           <div class="endpoints"><section class="endpoint"><span class="endpoint-icon"><Globe2 :size="22" /></span><div><h3>HTTP / HTTPS</h3><code>{{ saved.http_host }}:{{ saved.http_port }}</code></div><span class="pill">CONNECT</span></section><section class="endpoint"><span class="endpoint-icon"><Network :size="22" /></span><div><h3>SOCKS5</h3><code>{{ saved.socks_host }}:{{ saved.socks_port }}</code></div><span class="pill">TCP</span></section></div>
@@ -236,7 +260,8 @@ onUnmounted(() => { disposed = true; clearTimeout(timer); clearTimeout(copyNotic
           <div v-if="tab === 'ssh-forward'" class="ssh-global-options"><div class="options-header"><div><strong>SSH 转发全局 -o 参数</strong><small>默认参数会应用到全部端口转发。</small></div><button @click="showGlobalOptions = !showGlobalOptions">{{ showGlobalOptions ? '收起' : `展开${config.ssh_forward_options.length ? `（${config.ssh_forward_options.length}）` : ''}` }}</button></div><div v-if="showGlobalOptions" class="options-editor"><div v-for="(option, index) in config.ssh_forward_options" :key="index" class="option-row"><input :value="optionParts(option).key" placeholder="参数名" @input="updateGlobalOption(index, ($event.target as HTMLInputElement).value, optionParts(option).value)"><span>=</span><input :value="optionParts(option).value" placeholder="参数值" @input="updateGlobalOption(index, optionParts(option).key, ($event.target as HTMLInputElement).value)"><button class="danger-text" @click="removeGlobalOption(index)">删除</button></div><button @click="addGlobalOption"><Plus :size="14" />新增参数</button></div></div>
           <div v-if="tab === 'ssh-forward' && config.ssh_forwards.length" class="ssh-rule-options"><div v-for="rule in config.ssh_forwards" :key="`options-${rule.id}`" class="rule-options-item"><div class="options-header"><div><strong>{{ rule.name }} 的单条 -o 参数</strong><small>{{ rule.ssh_options.length ? `${rule.ssh_options.length} 个参数` : '未配置' }}</small></div><button @click="toggleRuleOptions(rule.id)">{{ expandedRuleOptions[rule.id] ? '收起' : '展开' }}</button></div><div v-if="expandedRuleOptions[rule.id]" class="options-editor"><div class="option-row" v-for="(option, index) in rule.ssh_options" :key="index"><input :value="optionParts(option).key" placeholder="参数名" @input="updateRuleOption(rule, index, ($event.target as HTMLInputElement).value, optionParts(option).value)"><span>=</span><input :value="optionParts(option).value" placeholder="参数值" @input="updateRuleOption(rule, index, optionParts(option).key, ($event.target as HTMLInputElement).value)"><button class="danger-text" @click="removeRuleOption(rule, index)">删除</button></div><button @click="addRuleOption(rule)"><Plus :size="14" />新增参数</button></div></div></div>
           <div v-if="tab === 'ssh-forward' && groupedSshForwards.length" class="grouped-forward-list"><section v-for="(group, groupIndex) in groupedSshForwards" :key="group.name" class="forward-group"><header class="forward-group-header"><button class="group-toggle" @click="toggleForwardGroup(group.name, groupIndex)"><ChevronRight :size="16" :class="{ rotated: isForwardGroupExpanded(group.name, groupIndex) }" /><strong>{{ group.name }}</strong><span class="muted">{{ group.rules.length }} 条转发</span></button><button @click="testAllSshForwards">全部测试</button></header><div v-if="isForwardGroupExpanded(group.name, groupIndex)" class="forward-group-body"><article v-for="rule in group.rules" :key="`group-${rule.id}`" class="group-forward-card"><div class="ssh-forward-head"><input v-model="rule.project" placeholder="项目分组"><input v-model="rule.name" placeholder="转发名称"><span class="pill" :class="{ green: sshForwardPorts[rule.id] }">{{ sshForwardPorts[rule.id] ? `运行中 :${sshForwardPorts[rule.id]}` : '已停止' }}</span><button :disabled="busy" @click="testSshForward(rule)">测试</button><button :disabled="busy" @click="toggleSshForward(rule)">{{ sshForwardPorts[rule.id] ? '停止' : '启动' }}</button><button class="danger-text" @click="removeSshForward(rule.id)">删除</button></div><div class="ssh-forward-grid"><label class="local-field">本地端口<input v-model.number="rule.local_port" type="number" min="0" max="65535" placeholder="自动分配"></label><label class="local-field">本地地址<input v-model="rule.bind_host" placeholder="127.0.0.1"></label><label class="remote-field">远程地址<input v-model="rule.remote_host" placeholder="127.0.0.1"></label><label class="remote-field">远程端口<input v-model.number="rule.remote_port" type="number" min="1" max="65535"></label><label class="remote-field">SSH 服务器<input v-model="rule.ssh_host" placeholder="~/.ssh/config 别名"></label><label class="remote-field">SSH 端口<input v-model.number="rule.ssh_port" type="number" min="1" max="65535"></label><label class="remote-field">用户名<input v-model="rule.ssh_username" placeholder="可由 SSH config 补全"></label><label>备注<input v-model="rule.note" placeholder="用途或环境说明"></label></div><p class="footnote">{{ rule.bind_host }}:{{ rule.local_port || '自动分配' }} → {{ rule.remote_host }}:{{ rule.remote_port }} · {{ rule.ssh_username || 'config 用户' }}@{{ rule.ssh_host }}</p></article></div></section></div>
-          <section class="panel appearance-panel">
+          <section v-if="tab === 'settings'" class="panel font-scale-panel"><div class="section-heading"><div><h3>文字大小</h3><p>全局应用显示大小；保存配置后会同步到 iCloud。</p></div></div><div class="font-scale-row"><div class="font-scale-buttons"><button aria-label="缩小文字" :disabled="config.font_scale === fontScaleChoices[0]" @click="adjustFontScale(-1)">−</button><output aria-live="polite">{{ config.font_scale }}%</output><button aria-label="放大文字" :disabled="config.font_scale === fontScaleChoices[fontScaleChoices.length - 1]" @click="adjustFontScale(1)">+</button></div><p class="footnote">快捷键：Control + 放大，Control - 缩小，Control 0 恢复 100%。</p></div></section>
+          <section v-if="tab === 'settings'" class="panel appearance-panel">
             <div class="section-heading"><div><h3>外观与主题</h3><p>即时生效并自动保存到本机，无需点击“保存配置”。</p></div></div>
             <div class="appearance-modes" role="group" aria-label="外观模式">
               <button v-for="mode in (['system', 'light', 'dark'] as const)" :key="mode" :aria-pressed="appearance === mode" :class="{ selected: appearance === mode }" @click="setAppearance(mode)">{{ { system: '跟随系统', light: '浅色模式', dark: '暗黑模式' }[mode] }}</button>
@@ -250,7 +275,7 @@ onUnmounted(() => { disposed = true; clearTimeout(timer); clearTimeout(copyNotic
             <p v-if="appearanceError" class="appearance-error" role="status">{{ appearanceError }}</p>
           </section>
           <section class="panel"><div class="section-heading"><div><h3>代理监听</h3><p>{{ running ? '代理运行中，停止后可修改监听地址与端口。' : '默认仅监听本机回环地址。' }}</p></div><Network :size="21" class="muted" /></div><div class="form-grid"><label>HTTP / HTTPS 地址<input v-model="config.http_host" :disabled="running" placeholder="127.0.0.1"></label><label>端口<input v-model.number="config.http_port" :disabled="running" type="number" min="1" max="65535"></label><label>SOCKS5 地址<input v-model="config.socks_host" :disabled="running" placeholder="127.0.0.1"></label><label>端口<input v-model.number="config.socks_port" :disabled="running" type="number" min="1" max="65535"></label></div></section>
-          <section class="panel"><h3>启动与日志</h3><label class="setting-row"><span><strong>自动启动代理</strong><small>打开应用时自动启动代理服务</small></span><input v-model="config.auto_start" type="checkbox" role="switch"></label><div class="form-grid"><label>日志级别<select v-model="config.log_level"><option value="error">ERROR · 错误</option><option value="warn">WARN · 警告</option><option value="info">INFO · 信息</option><option value="debug">DEBUG · 调试</option></select></label><label>日志保留天数<input v-model.number="config.log_retention_days" type="number" min="1" max="3650"></label><label>趋势保留天数<input v-model.number="config.trend_retention_days" type="number" min="1" max="21"></label></div><p class="footnote">内存日志在写入时按保留天数清理；最多保留 2,000 条，应用退出后清空。</p></section>
+          <section class="panel"><h3>日志</h3><div class="form-grid"><label>日志级别<select v-model="config.log_level"><option value="error">ERROR · 错误</option><option value="warn">WARN · 警告</option><option value="info">INFO · 信息</option><option value="debug">DEBUG · 调试</option></select></label><label>日志保留天数<input v-model.number="config.log_retention_days" type="number" min="1" max="3650"></label><label>趋势保留天数<input v-model.number="config.trend_retention_days" type="number" min="1" max="21"></label></div><p class="footnote">内存日志在写入时按保留天数清理；最多保留 2,000 条，应用退出后清空。</p></section>
           <section class="panel ssh-panel"><div class="section-heading"><div><h3>SSH 代理链路</h3><p>放行后的流量可通过当前启用的多跳 SSH 动态 SOCKS5 出口访问目标。</p></div><button @click="addSshProfile"><Plus :size="16" />新建链路</button></div><div v-if="config.ssh_profiles.length" class="ssh-profiles"><article v-for="profile in config.ssh_profiles" :key="profile.id" class="ssh-profile"><div class="ssh-profile-head"><label class="profile-active"><input v-model="config.active_ssh_profile" type="radio" name="active-ssh" :value="profile.id">启用</label><input v-model="profile.name" class="profile-name" aria-label="SSH 链路名称"><span class="pill" :class="{ green: sshRunning && config.active_ssh_profile === profile.id }">{{ sshRunning && config.active_ssh_profile === profile.id ? `运行中 :${sshLocalPort}` : `${profile.hops.length} 跳` }}</span><button class="danger-text" @click="removeSshProfile(profile.id)">删除</button></div><div v-for="(hop, index) in profile.hops" :key="index" class="ssh-hop" draggable="true" @dragstart="beginHopDrag(profile, index)" @dragover.prevent @drop="dropHop(profile, index)"><span class="hop-index" title="拖动调整顺序">⠿ {{ index + 1 }}</span><input v-model="hop.host" placeholder="服务器地址" aria-label="SSH 服务器地址"><input v-model.number="hop.port" type="number" min="1" max="65535" placeholder="端口" aria-label="SSH 端口"><input v-model="hop.username" placeholder="用户名" aria-label="SSH 用户名"><select v-model="hop.auth" aria-label="认证方式"><option value="agent">ssh-agent</option><option value="keychain">钥匙串私钥</option><option value="password">密码（暂未启用）</option></select><button v-if="profile.hops.length > 1" class="danger-text" :aria-label="`删除第 ${index + 1} 跳`" @click="removeSshHop(profile, index)"><Trash2 :size="15" /></button></div><div class="toolbar"><button @click="addSshHop(profile)"><Plus :size="14" />添加下一跳</button><span class="muted">多跳按从前到后的顺序连接</span></div></article></div><div v-else class="empty ssh-empty">尚未配置 SSH 链路。点击“新建链路”开始配置。</div><p class="footnote"><CircleHelp :size="15" />SSH 私钥、密码和私钥口令不会同步到 iCloud；密码认证功能将在 Keychain 接入后启用。</p></section>
           <section class="panel"><div class="section-heading"><div><h3>iCloud 配置同步</h3><p>同步规则、普通代理设置和 SSH 链路元数据；私钥、密码和私钥口令不会同步。</p></div><span class="pill" :class="{ green: icloudAvailable }">{{ icloudAvailable ? 'iCloud 目录可用' : '未检测到 iCloud 目录' }}</span></div><div class="toolbar"><button class="primary" :disabled="busy || !desktop || !icloudAvailable" @click="syncIcloud">推送当前配置</button><button :disabled="busy || !desktop || !icloudAvailable" @click="mergeIcloud">拉取并合并</button><span class="muted">规则自动去重合并，其他设置以当前草稿为准</span></div></section>
           <section class="panel"><div class="section-heading"><div><h3>Gist 规则同步</h3><p>支持 GitHub Gist 和 Gitee 代码片段；Token 仅用于本次请求，不写入配置文件。</p></div></div><div class="form-grid gist-sync-grid"><label>服务商<select v-model="config.gist_provider"><option value="github">GitHub Gist</option><option value="gitee">Gitee 代码片段</option></select></label><label>Gist ID<input v-model="config.gist_id" placeholder="例如：a1b2c3d4" autocomplete="off"></label><label>文件名<input v-model="config.gist_file_name" placeholder="domain-egress-rules.json" autocomplete="off"></label><label>访问令牌<input v-model="gistToken" type="password" placeholder="推送需要，拉取公开片段可留空" autocomplete="off"></label></div><div class="toolbar gist-sync-actions"><button class="primary" :disabled="busy || !desktop || !config.gist_id.trim()" @click="pushGist">推送当前规则</button><button :disabled="busy || !desktop || !config.gist_id.trim()" @click="pullGist">拉取并合并规则</button><span class="muted">拉取结果进入草稿，保存配置后才生效</span></div></section>
@@ -274,6 +299,7 @@ onUnmounted(() => { disposed = true; clearTimeout(timer); clearTimeout(copyNotic
 .sidebar-update:hover { color:var(--accent); background:transparent; }
 .sidebar-update-hint { display:block; margin-top:3px; color:var(--accent); font-size:9px; }
 .page-heading { margin-bottom: 17px; }
+.page-heading-actions { display:flex; align-items:center; gap:10px; }
 .page-heading h1 { line-height: 1.3; }
 .page-heading p { margin-top: 3px; line-height: 1.55; }
 .context-menu { position: fixed; z-index: 30; background: var(--surface); border: 1px solid var(--border); border-radius: 7px; padding: 5px; box-shadow: 0 8px 24px var(--shadow); }
@@ -376,18 +402,36 @@ onUnmounted(() => { disposed = true; clearTimeout(timer); clearTimeout(copyNotic
 .status-icon { width: 52px; height: 52px; border-radius: 14px; }
 .status-text h2 { margin: 3px 0; }
 .service-endpoints { margin-top: 6px; }
+.status-actions { display:flex; flex-direction:column; align-items:stretch; gap:9px; min-width:196px; }
+.status-actions > button { justify-content:center; }
+.overview-auto-start { display:flex; align-items:center; justify-content:space-between; gap:9px; padding:8px 10px; border:1px solid color-mix(in srgb, var(--accent) 32%, var(--border)); border-radius:8px; color:var(--text); cursor:pointer; }
+.overview-auto-start > span { display:flex; flex-direction:column; gap:2px; font-size:11px; }
+.overview-auto-start small { color:var(--muted); font-size:10px; font-weight:400; }
 .network-summary { padding: 19px 22px; }
 .network-summary .section-heading { margin-bottom: 16px; }
-.network-summary-grid { display:grid; grid-template-columns: minmax(0, 1.25fr) minmax(280px, .75fr); gap: 24px; }
-.network-block { min-width:0; }
+.network-summary-grid { display:grid; grid-template-columns:1fr; gap:14px; }
+.network-block { min-width:0; padding:16px; background:var(--surface-muted); border:1px solid var(--border); border-radius:10px; }
 .network-block h4 { margin:0; font-size:12px; }
 .network-block > p { margin-top:4px; font-size:10px; }
 .network-block .interface-list { margin-top:11px; }
 .network-block .empty { padding:25px 10px; }
 .network-block-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
 .network-block-heading p { margin-top:4px; font-size:10px; }
-.public-ip-block { border-left:1px solid var(--border); padding-left:24px; }
-.public-ip-result { display:flex; align-items:center; gap:12px; min-height:34px; }
+.public-ip-block { border-left:1px solid var(--border); }
+.public-ip-result { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:7px 12px; align-items:center; padding:12px 0; border-bottom:1px solid var(--border); }
+.public-ip-result:last-of-type { border-bottom:0; }
+.public-ip-result > div { display:flex; align-items:center; gap:9px; min-width:0; }
+.probe-address { grid-column:1 / -1; display:grid !important; grid-template-columns:minmax(0, 1fr) auto; gap:4px 12px; padding:9px 10px; background:var(--raised); border-radius:7px; }
+.public-ip-result:has(.probe-address + .probe-address) { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+.public-ip-result:has(.probe-address + .probe-address) > :not(.probe-address):not(.location-meta) { grid-column:1 / -1; }
+.public-ip-result:has(.probe-address + .probe-address) .probe-address { grid-column:auto; }
+.probe-address > div { display:flex; flex-direction:column; align-items:flex-start; gap:3px; }
+.probe-address .location-value { align-self:center; }
+.location-value { font-size:12px; color:var(--text); }
+.location-meta { grid-column:1 / -1; font-size:10px; color:var(--muted); overflow-wrap:anywhere; }
+.public-ip-block .footnote { margin-top:12px; }
+.public-ip-block .spin { animation:public-ip-spin .8s linear infinite; }
+@keyframes public-ip-spin { to { transform:rotate(360deg); } }
 .update-banner { display:flex; align-items:center; gap:12px; margin-bottom:18px; padding:12px 15px; color:var(--text); background:color-mix(in srgb, var(--accent) 12%, var(--surface)); border:1px solid color-mix(in srgb, var(--accent) 35%, var(--border)); border-radius:9px; }
 .update-banner span { flex:1; font-size:12px; }
 .update-dismiss { border:0; background:transparent; color:var(--muted); }
@@ -396,6 +440,17 @@ onUnmounted(() => { disposed = true; clearTimeout(timer); clearTimeout(copyNotic
 .about-version button { display:inline-flex; align-items:center; gap:6px; }
 .update-hint { color:var(--accent); }
 .public-ip-result strong { font-size:18px; letter-spacing:.02em; }
+.app-shell { font-size:calc(13px * var(--font-scale, 1)); }
+.app-shell h1 { font-size:calc(27px * var(--font-scale, 1)); }
+.app-shell h2 { font-size:calc(20px * var(--font-scale, 1)); }
+.app-shell h3 { font-size:calc(14px * var(--font-scale, 1)); }
+.app-shell h4 { font-size:calc(12px * var(--font-scale, 1)); }
+.app-shell :is(button, input, select, textarea) { font-size:inherit; }
+.font-scale-row { display:flex; align-items:center; justify-content:space-between; gap:18px; }
+.font-scale-row .footnote { margin:0; }
+.font-scale-buttons { display:flex; align-items:center; gap:8px; }
+.font-scale-buttons button { width:34px; height:34px; padding:0; font-size:20px; line-height:1; }
+.font-scale-buttons output { min-width:62px; text-align:center; font:600 15px var(--mono); }
 .notice .undo { color:var(--accent); font-weight:600; padding:4px 8px; background:none; border:0; }
 .gist-sync-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 22px; row-gap: 18px; }
 .gist-sync-actions { justify-content: flex-start; flex-wrap: wrap; margin-top: 18px; }
@@ -403,8 +458,10 @@ onUnmounted(() => { disposed = true; clearTimeout(timer); clearTimeout(copyNotic
 @media (max-width:700px) { .service-endpoints { flex-direction:column; gap:4px; } .status-text { min-width:0; } .service-endpoints span { overflow:hidden; text-overflow:ellipsis; } }
 @media (max-width:700px) { .gist-sync-grid { grid-template-columns: 1fr; } .gist-sync-actions { align-items: stretch; } .gist-sync-actions button, .gist-sync-actions .muted { width: 100%; } }
 @media (max-width:700px) { .interface-row { grid-template-columns: 1fr auto; gap:5px 10px; } .interface-addresses { grid-column: 1 / -1; } }
-@media (max-width:700px) { .status-card { padding:16px; } .network-summary { padding:17px; } .network-summary-grid { grid-template-columns:1fr; gap:20px; } .public-ip-block { border-left:0; border-top:1px solid var(--border); padding:18px 0 0; } }
-@media (max-width:700px) { .public-ip-result { align-items:flex-start; flex-direction:column; gap:7px; } }
+@media (max-width:700px) { .status-card { padding:16px; } .network-summary { padding:17px; } .network-summary-grid { gap:12px; } .network-block { padding:14px; } .public-ip-block { border-left:1px solid var(--border); } }
+@media (max-width:700px) { .status-actions { width:100%; } }
+@media (max-width:700px) { .public-ip-result { grid-template-columns:1fr; align-items:flex-start; } .public-ip-result > .pill { justify-self:start; } .probe-address { grid-template-columns:1fr; } .probe-address .location-value { align-self:start; } }
+@media (max-width:700px) { .public-ip-result:has(.probe-address + .probe-address) { grid-template-columns:1fr; } .font-scale-row { align-items:flex-start; flex-direction:column; gap:10px; } }
 @media (max-width:700px) { .update-banner { align-items:flex-start; flex-wrap:wrap; } .update-banner span { flex-basis:calc(100% - 30px); } }
 @media (max-width:700px) { .host-info { max-width:90px; } .header-separator { margin:0 1px; } }
 </style>

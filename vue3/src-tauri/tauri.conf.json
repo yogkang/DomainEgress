@@ -27,7 +27,9 @@
   "bundle": {
     "active": true,
     "resources": [
-      "resources/DomainEgress-使用说明.md"
+      "resources/DomainEgress-使用说明.md",
+      "resources/geoip/ip2region_v4.xdb",
+      "resources/geoip/ip2region_v6.xdb"
     ],
     "targets": [
       "app",

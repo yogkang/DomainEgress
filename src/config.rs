@@ -71,6 +71,8 @@ pub struct Config {
     pub log_retention_days: u32,
     #[serde(default = "default_trend_retention_days")]
     pub trend_retention_days: u32,
+    #[serde(default = "default_font_scale")]
+    pub font_scale: u16,
     #[serde(default)]
     pub whitelist_added_at: HashMap<String, u64>,
     #[serde(default)]
@@ -184,10 +186,11 @@ impl Default for Config {
             http_port: 19876,
             socks_host: "127.0.0.1".into(),
             socks_port: 16789,
-            auto_start: true,
+            auto_start: false,
             log_level: "info".into(),
             log_retention_days: 30,
             trend_retention_days: 21,
+            font_scale: 100,
             whitelist_added_at: HashMap::new(),
             blacklist_added_at: HashMap::new(),
             ssh_profiles: Vec::new(),
@@ -209,6 +212,7 @@ fn default_log_retention_days() -> u32 {
     30
 }
 fn default_trend_retention_days() -> u32 { 21 }
+fn default_font_scale() -> u16 { 100 }
 fn default_gist_file_name() -> String { "domain-egress-rules.json".into() }
 fn default_ssh_auth() -> String { "agent".into() }
 fn default_forward_bind_host() -> String { "127.0.0.1".into() }
@@ -225,7 +229,7 @@ impl Config {
         normalize_rules(&mut config.blacklist, &mut config.blacklist_added_at);
         if config.version < 2 {
             config.version = 2;
-            config.auto_start = true;
+            config.auto_start = false;
             let _ = config.save();
         }
         let _ = config.save();

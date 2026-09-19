@@ -26,7 +26,9 @@ struct AppState {
     tray_menu: Mutex<Option<tauri::menu::Menu<tauri::Wry>>>,
     tray_start: Mutex<Option<tauri::menu::MenuItem<tauri::Wry>>>,
     tray_stop: Mutex<Option<tauri::menu::MenuItem<tauri::Wry>>>,
+    tray_quit: Mutex<Option<tauri::menu::MenuItem<tauri::Wry>>>,
     message: Mutex<Option<String>>,
+    geoip: GeoIpDatabases,
 }
 #[derive(Serialize)]
 struct Snapshot {
@@ -42,107 +44,529 @@ struct Snapshot {
     ssh_forward_ports: std::collections::HashMap<String, u16>,
 }
 #[derive(Clone, Serialize)]
-struct NetworkInterface { name: String, kind: String, addresses: Vec<String> }
+struct NetworkInterface {
+    name: String,
+    kind: String,
+    addresses: Vec<String>,
+}
 #[derive(Clone, Serialize)]
-struct PublicIpProbe { ip: Option<String>, sources: Vec<String>, confidence: String, error: Option<String> }
+struct GeoLocation {
+    country: String,
+    country_code: String,
+    region: String,
+    city: String,
+    isp: String,
+    source: String,
+    confidence: String,
+}
 #[derive(Clone, Serialize)]
-struct UpdateInfo { current_version: String, latest_version: Option<String>, release_url: Option<String>, available: bool, error: Option<String> }
+struct EgressAddress { ip: String, source: String, location: Option<GeoLocation> }
+#[derive(Clone, Serialize)]
+struct EgressProbe { addresses: Vec<EgressAddress>, confidence: String, error: Option<String> }
+#[derive(Clone, Serialize)]
+struct PublicIpProbe { system: EgressProbe, ipv6: Option<EgressProbe> }
+struct GeoIpDatabases {
+    ipv4: Option<ip2region::Searcher>,
+    ipv6: Option<ip2region::Searcher>,
+}
+#[derive(Clone)]
+struct OnlineGeoLocation {
+    country: String,
+    country_code: String,
+    region: String,
+    city: String,
+    isp: String,
+    source: &'static str,
+}
+#[derive(Clone, Serialize)]
+struct UpdateInfo {
+    current_version: String,
+    latest_version: Option<String>,
+    release_url: Option<String>,
+    available: bool,
+    error: Option<String>,
+}
 const APP_VERSION: &str = "0.2.1";
 fn version_tuple(value: &str) -> Option<(u64, u64, u64)> {
-    let values = value.trim().trim_start_matches('v').split('.').map(|part| part.split('-').next().unwrap_or(part).parse::<u64>().ok()).collect::<Option<Vec<_>>>()?;
+    let values = value
+        .trim()
+        .trim_start_matches('v')
+        .split('.')
+        .map(|part| part.split('-').next().unwrap_or(part).parse::<u64>().ok())
+        .collect::<Option<Vec<_>>>()?;
     (values.len() >= 3).then_some((values[0], values[1], values[2]))
 }
 #[tauri::command]
 fn check_update() -> UpdateInfo {
-    let output = Command::new("/usr/bin/curl").args(["--fail", "--silent", "--show-error", "--location", "--max-time", "10", "-H", "Accept: application/vnd.github+json", "https://api.github.com/repos/yogkang/DomainEgress/releases/latest"]).output();
-    let response = match output { Ok(output) if output.status.success() => output, Ok(output) => return UpdateInfo { current_version: APP_VERSION.into(), latest_version: None, release_url: None, available: false, error: Some(String::from_utf8_lossy(&output.stderr).trim().to_string()) }, Err(error) => return UpdateInfo { current_version: APP_VERSION.into(), latest_version: None, release_url: None, available: false, error: Some(error.to_string()) } };
-    let payload: serde_json::Value = match serde_json::from_slice(&response.stdout) { Ok(value) => value, Err(error) => return UpdateInfo { current_version: APP_VERSION.into(), latest_version: None, release_url: None, available: false, error: Some(format!("Release 返回格式无效：{error}")) } };
-    let latest = payload.get("tag_name").and_then(|value| value.as_str()).unwrap_or_default().trim_start_matches('v').to_string();
-    let release_url = payload.get("html_url").and_then(|value| value.as_str()).map(String::from);
-    let available = version_tuple(&latest).zip(version_tuple(APP_VERSION)).is_some_and(|(latest, current)| latest > current);
-    UpdateInfo { current_version: APP_VERSION.into(), latest_version: (!latest.is_empty()).then_some(latest), release_url, available, error: None }
+    let output = Command::new("/usr/bin/curl")
+        .args([
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--location",
+            "--max-time",
+            "10",
+            "-H",
+            "Accept: application/vnd.github+json",
+            "https://api.github.com/repos/yogkang/DomainEgress/releases/latest",
+        ])
+        .output();
+    let response = match output {
+        Ok(output) if output.status.success() => output,
+        Ok(output) => {
+            return UpdateInfo {
+                current_version: APP_VERSION.into(),
+                latest_version: None,
+                release_url: None,
+                available: false,
+                error: Some(String::from_utf8_lossy(&output.stderr).trim().to_string()),
+            }
+        }
+        Err(error) => {
+            return UpdateInfo {
+                current_version: APP_VERSION.into(),
+                latest_version: None,
+                release_url: None,
+                available: false,
+                error: Some(error.to_string()),
+            }
+        }
+    };
+    let payload: serde_json::Value = match serde_json::from_slice(&response.stdout) {
+        Ok(value) => value,
+        Err(error) => {
+            return UpdateInfo {
+                current_version: APP_VERSION.into(),
+                latest_version: None,
+                release_url: None,
+                available: false,
+                error: Some(format!("Release 返回格式无效：{error}")),
+            }
+        }
+    };
+    let latest = payload
+        .get("tag_name")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .trim_start_matches('v')
+        .to_string();
+    let release_url = payload
+        .get("html_url")
+        .and_then(|value| value.as_str())
+        .map(String::from);
+    let available = version_tuple(&latest)
+        .zip(version_tuple(APP_VERSION))
+        .is_some_and(|(latest, current)| latest > current);
+    UpdateInfo {
+        current_version: APP_VERSION.into(),
+        latest_version: (!latest.is_empty()).then_some(latest),
+        release_url,
+        available,
+        error: None,
+    }
 }
 #[tauri::command]
 fn open_update(url: String) -> Result<(), String> {
-    if !url.starts_with("https://github.com/yogkang/DomainEgress/releases/") { return Err("更新地址不受信任".into()); }
-    Command::new("/usr/bin/open").arg(url).status().map_err(|e| e.to_string()).and_then(|status| if status.success() { Ok(()) } else { Err("无法打开更新页面".into()) })
+    if !url.starts_with("https://github.com/yogkang/DomainEgress/releases/") {
+        return Err("更新地址不受信任".into());
+    }
+    Command::new("/usr/bin/open")
+        .arg(url)
+        .status()
+        .map_err(|e| e.to_string())
+        .and_then(|status| {
+            if status.success() {
+                Ok(())
+            } else {
+                Err("无法打开更新页面".into())
+            }
+        })
 }
-fn fetch_public_ip(url: &str) -> Result<String, String> {
-    let output = Command::new("/usr/bin/curl").args(["--fail", "--silent", "--show-error", "--location", "--max-time", "10", url]).output().map_err(|e| e.to_string())?;
-    if !output.status.success() { return Err(String::from_utf8_lossy(&output.stderr).trim().to_string()); }
+fn curl_output(url: &str, ssh_port: Option<u16>) -> Result<std::process::Output, String> {
+    let mut command = Command::new("/usr/bin/curl");
+    command.args([
+        "--fail",
+        "--silent",
+        "--show-error",
+        "--location",
+        "--connect-timeout",
+        "3",
+        "--max-time",
+        "5",
+    ]);
+    let proxy;
+    if let Some(port) = ssh_port {
+        proxy = format!("socks5h://127.0.0.1:{port}");
+        command.args(["--proxy", &proxy]);
+    }
+    command.arg(url).output().map_err(|e| e.to_string())
+}
+fn fetch_public_ip(url: &str, ssh_port: Option<u16>) -> Result<String, String> {
+    let output = curl_output(url, ssh_port)?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
     validate_public_ip(String::from_utf8_lossy(&output.stdout).trim())
 }
-fn fetch_public_ip_dns(query: &str, server: &str) -> Result<String, String> {
-    let resolver = format!("@{server}");
-    let output = Command::new("/usr/bin/dig").args(["+short", query, &resolver]).output().map_err(|e| e.to_string())?;
-    if !output.status.success() { return Err(String::from_utf8_lossy(&output.stderr).trim().to_string()); }
+fn fetch_public_ip_dns(record_type: &str) -> Result<String, String> {
+    let output = Command::new("/usr/bin/dig")
+        .args(["+tcp", "@208.67.222.222", "myip.opendns.com", record_type, "+short"])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
     let response = String::from_utf8_lossy(&output.stdout);
-    let value = response.lines().map(str::trim).find(|line| !line.is_empty()).ok_or_else(|| "DNS 未返回 IP 地址".to_string())?;
+    let value = response
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .ok_or_else(|| "DNS 未返回 IP 地址".to_string())?;
     validate_public_ip(value)
 }
+fn value_string(value: &serde_json::Value, key: &str) -> Option<String> {
+    value
+        .get(key)
+        .and_then(|item| item.as_str())
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(String::from)
+}
+fn parse_ipwho_location(ip: &str, value: &serde_json::Value) -> Result<OnlineGeoLocation, String> {
+    if value.get("success").and_then(|item| item.as_bool()) == Some(false) {
+        return Err(value_string(value, "message").unwrap_or_else(|| "ipwho 返回失败".into()));
+    }
+    if value_string(value, "ip").as_deref() != Some(ip) {
+        return Err("ipwho 返回的 IP 不匹配".into());
+    }
+    let country = value_string(value, "country").ok_or_else(|| "ipwho 未返回国家".to_string())?;
+    let country_code =
+        value_string(value, "country_code").ok_or_else(|| "ipwho 未返回国家代码".to_string())?;
+    let connection = value.get("connection").unwrap_or(&serde_json::Value::Null);
+    Ok(OnlineGeoLocation {
+        country,
+        country_code,
+        region: value_string(value, "region").unwrap_or_default(),
+        city: value_string(value, "city").unwrap_or_default(),
+        isp: value_string(connection, "isp")
+            .or_else(|| value_string(connection, "org"))
+            .unwrap_or_default(),
+        source: "ipwho",
+    })
+}
+fn parse_ipwhois_location(ip: &str, value: &serde_json::Value) -> Result<OnlineGeoLocation, String> {
+    if value.get("success").and_then(|item| item.as_bool()) == Some(false) {
+        return Err(value_string(value, "message").unwrap_or_else(|| "ipwhois 返回失败".into()));
+    }
+    if value_string(value, "ip").as_deref() != Some(ip) {
+        return Err("ipwhois 返回的 IP 不匹配".into());
+    }
+    let country = value_string(value, "country").ok_or_else(|| "ipwhois 未返回国家".to_string())?;
+    let country_code = value_string(value, "country_code").ok_or_else(|| "ipwhois 未返回国家代码".to_string())?;
+    Ok(OnlineGeoLocation {
+        country,
+        country_code,
+        region: value_string(value, "region").unwrap_or_default(),
+        city: value_string(value, "city").unwrap_or_default(),
+        isp: value_string(value, "org").unwrap_or_default(),
+        source: "ipwhois.app",
+    })
+}
+fn fetch_online_location(ip: &str, ssh_port: Option<u16>) -> Result<GeoLocation, String> {
+    let first = curl_output(&format!("https://ipwho.is/{ip}"), ssh_port).and_then(|output| {
+        if output.status.success() {
+            serde_json::from_slice(&output.stdout)
+                .map_err(|error| error.to_string())
+                .and_then(|value| parse_ipwho_location(ip, &value))
+        } else {
+            Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+        }
+    });
+    let second =
+        curl_output(&format!("https://ipwhois.app/json/{ip}"), ssh_port).and_then(|output| {
+            if output.status.success() {
+                serde_json::from_slice(&output.stdout)
+                    .map_err(|error| error.to_string())
+                    .and_then(|value| parse_ipwhois_location(ip, &value))
+            } else {
+                Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+            }
+        });
+    match (first, second) {
+        (Ok(first), Ok(second))
+            if first
+                .country_code
+                .eq_ignore_ascii_case(&second.country_code) =>
+        {
+            let city_matches = !first.city.is_empty()
+                && first.city.eq_ignore_ascii_case(&second.city)
+                && first.region.eq_ignore_ascii_case(&second.region);
+            Ok(GeoLocation {
+                country: first.country,
+                country_code: first.country_code,
+                region: if city_matches {
+                    first.region
+                } else {
+                    String::new()
+                },
+                city: if city_matches {
+                    first.city
+                } else {
+                    String::new()
+                },
+                isp: first.isp,
+                source: format!("{}、{}", first.source, second.source),
+                confidence: if city_matches {
+                    "在线双源一致".into()
+                } else {
+                    "在线国家一致，城市有差异".into()
+                },
+            })
+        }
+        (Ok(first), Ok(second)) => Ok(GeoLocation {
+            country: first.country,
+            country_code: first.country_code,
+            region: String::new(),
+            city: String::new(),
+            isp: first.isp,
+            source: format!("{}、{}", first.source, second.source),
+            confidence: "在线来源不一致".into(),
+        }),
+        (Ok(value), Err(_)) | (Err(_), Ok(value)) => Ok(GeoLocation {
+            country: value.country,
+            country_code: value.country_code,
+            region: value.region,
+            city: value.city,
+            isp: value.isp,
+            source: value.source.into(),
+            confidence: "在线单源".into(),
+        }),
+        (Err(first), Err(second)) => Err(format!("在线归属地查询失败：{first}；{second}")),
+    }
+}
+fn parse_ip2region_location(value: &str) -> Option<GeoLocation> {
+    let fields: Vec<_> = value.split('|').collect();
+    let country = fields.first()?.trim();
+    if country.is_empty() || country == "0" || country.eq_ignore_ascii_case("reserved") {
+        return None;
+    }
+    Some(GeoLocation {
+        country: country.into(),
+        country_code: fields
+            .get(4)
+            .map(|item| item.trim())
+            .filter(|item| !item.is_empty() && *item != "0")
+            .unwrap_or_default()
+            .into(),
+        region: fields
+            .get(1)
+            .map(|item| item.trim())
+            .filter(|item| *item != "0")
+            .unwrap_or_default()
+            .into(),
+        city: fields
+            .get(2)
+            .map(|item| item.trim())
+            .filter(|item| *item != "0")
+            .unwrap_or_default()
+            .into(),
+        isp: fields
+            .get(3)
+            .map(|item| item.trim())
+            .filter(|item| *item != "0")
+            .unwrap_or_default()
+            .into(),
+        source: "ip2region 离线库".into(),
+        confidence: "离线兜底".into(),
+    })
+}
+impl GeoIpDatabases {
+    fn load(resource_dir: &std::path::Path) -> Self {
+        let bundled = resource_dir.join("resources").join("geoip");
+        let location = |name: &str| {
+            let from_bundle = bundled.join(name);
+            if from_bundle.exists() {
+                from_bundle
+            } else {
+                let direct = resource_dir.join("geoip").join(name);
+                if direct.exists() {
+                    direct
+                } else {
+                    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                        .join("resources")
+                        .join("geoip")
+                        .join(name)
+                }
+            }
+        };
+        Self {
+            ipv4: ip2region::Searcher::new(
+                location("ip2region_v4.xdb").display().to_string(),
+                ip2region::CachePolicy::VectorIndex,
+            )
+            .ok(),
+            ipv6: ip2region::Searcher::new(
+                location("ip2region_v6.xdb").display().to_string(),
+                ip2region::CachePolicy::VectorIndex,
+            )
+            .ok(),
+        }
+    }
+    fn lookup(&self, ip: &str) -> Option<GeoLocation> {
+        let searcher = match ip.parse::<std::net::IpAddr>().ok()? {
+            std::net::IpAddr::V4(_) => self.ipv4.as_ref(),
+            std::net::IpAddr::V6(_) => self.ipv6.as_ref(),
+        }?;
+        searcher
+            .search(ip)
+            .ok()
+            .as_deref()
+            .and_then(parse_ip2region_location)
+    }
+}
 fn validate_public_ip(value: &str) -> Result<String, String> {
-    let value = value.parse::<std::net::IpAddr>().map_err(|_| "来源返回的不是有效 IP 地址".to_string())?;
+    let value = value
+        .parse::<std::net::IpAddr>()
+        .map_err(|_| "来源返回的不是有效 IP 地址".to_string())?;
     let public = match value {
-        std::net::IpAddr::V4(ip) => !(ip.is_private() || ip.is_loopback() || ip.is_link_local() || ip.is_unspecified() || ip.is_multicast()),
-        std::net::IpAddr::V6(ip) => !(ip.is_unique_local() || ip.is_loopback() || ip.is_unicast_link_local() || ip.is_unspecified() || ip.is_multicast()),
+        std::net::IpAddr::V4(ip) => {
+            !(ip.is_private()
+                || ip.is_loopback()
+                || ip.is_link_local()
+                || ip.is_unspecified()
+                || ip.is_multicast())
+        }
+        std::net::IpAddr::V6(ip) => {
+            !(ip.is_unique_local()
+                || ip.is_loopback()
+                || ip.is_unicast_link_local()
+                || ip.is_unspecified()
+                || ip.is_multicast())
+        }
     };
-    if !public { return Err("来源返回的不是公网 IP 地址".into()); }
+    if !public {
+        return Err("来源返回的不是公网 IP 地址".into());
+    }
     Ok(value.to_string())
 }
+fn resolve_address(ip: String, source: &str, geoip: &GeoIpDatabases) -> EgressAddress {
+    let location = fetch_online_location(&ip, None)
+        .or_else(|_| geoip.lookup(&ip).ok_or_else(|| String::from("离线归属地库未命中")))
+        .ok();
+    EgressAddress { ip, source: source.into(), location }
+}
+fn public_ip_family(ip: &str, family: &str) -> Result<String, String> {
+    let ip = validate_public_ip(ip)?;
+    match (family, ip.contains(':')) {
+        ("IPv4", false) | ("IPv6", true) => Ok(ip),
+        _ => Err(format!("来源未返回 {family} 公网地址")),
+    }
+}
+fn probe_ip_family_route(geoip: &GeoIpDatabases, family: &str, http_url: &str, dns_record_type: &str) -> EgressProbe {
+    let http = fetch_public_ip(http_url, None).and_then(|ip| public_ip_family(&ip, family));
+    let dns = fetch_public_ip_dns(dns_record_type).and_then(|ip| public_ip_family(&ip, family));
+    let http_source = format!("HTTP · {http_url}");
+    let dns_source = "DNS/TCP · 208.67.222.222";
+    match (http, dns) {
+        (Ok(http), Ok(dns)) if http == dns => EgressProbe {
+            addresses: vec![resolve_address(http, &format!("{http_source}；{dns_source}"), geoip)],
+            confidence: "HTTP 与 DNS 一致".into(),
+            error: None,
+        },
+        (Ok(http), Ok(dns)) => EgressProbe {
+            addresses: vec![
+                resolve_address(http, &http_source, geoip),
+                resolve_address(dns, dns_source, geoip),
+            ],
+            confidence: "HTTP 与 DNS 不一致".into(),
+            error: None,
+        },
+        (Ok(http), Err(dns_error)) => EgressProbe {
+            addresses: vec![resolve_address(http, &http_source, geoip)],
+            confidence: "仅 HTTP 成功".into(),
+            error: Some(format!("DNS/TCP 探测失败：{dns_error}")),
+        },
+        (Err(http_error), Ok(dns)) => EgressProbe {
+            addresses: vec![resolve_address(dns, dns_source, geoip)],
+            confidence: "仅 DNS 成功".into(),
+            error: Some(format!("HTTP 探测失败：{http_error}")),
+        },
+        (Err(http_error), Err(dns_error)) => EgressProbe {
+            addresses: Vec::new(),
+            confidence: "探测失败".into(),
+            error: Some(format!("HTTP：{http_error}；DNS/TCP：{dns_error}")),
+        },
+    }
+}
 #[tauri::command]
-fn probe_public_ip() -> PublicIpProbe {
-    let endpoints = [
-        ("ipify", "https://api.ipify.org"),
-        ("icanhazip", "https://ipv4.icanhazip.com"),
-        ("amazon", "https://checkip.amazonaws.com"),
-        ("ident", "https://4.ident.me"),
-    ];
-    let mut results: Vec<(&str, String)> = Vec::new();
-    for (name, url) in endpoints {
-        let result = fetch_public_ip(url);
-        if let Ok(ip) = &result {
-            for (first_name, first_ip) in &results {
-                if first_ip == ip {
-                    return PublicIpProbe { ip: Some(ip.clone()), sources: vec![(*first_name).into(), name.into()], confidence: "双源一致".into(), error: None };
-                }
-            }
-            results.push((name, ip.clone()));
-        }
+fn probe_public_ip(state: State<AppState>) -> PublicIpProbe {
+    let system = probe_ip_family_route(&state.geoip, "IPv4", "https://api.ipify.org", "A");
+    let ipv6_probe = probe_ip_family_route(&state.geoip, "IPv6", "https://api6.ipify.org", "AAAA");
+    PublicIpProbe {
+        system,
+        ipv6: (!ipv6_probe.addresses.is_empty()).then_some(ipv6_probe),
     }
-    let dns_endpoints = [
-        ("dns-opendns", "myip.opendns.com", "resolver1.opendns.com"),
-        ("dns-cloudflare", "whoami.cloudflare", "1.1.1.1"),
-    ];
-    for (name, query, server) in dns_endpoints {
-        if let Ok(ip) = fetch_public_ip_dns(query, server) {
-            for (first_name, first_ip) in &results {
-                if first_ip == &ip {
-                    return PublicIpProbe { ip: Some(ip), sources: vec![(*first_name).into(), name.into()], confidence: "双源一致".into(), error: None };
-                }
-            }
-            results.push((name, ip));
-        }
-    }
-    PublicIpProbe { ip: None, sources: results.iter().map(|(name, _)| (*name).into()).collect(), confidence: "未确认".into(), error: Some("候选地址均未能得到两个一致的公网 IPv4 来源".into()) }
 }
 fn local_interfaces() -> Vec<NetworkInterface> {
-    let output = Command::new("/usr/sbin/networksetup").arg("-listallhardwareports").output().ok();
-    let text = output.map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
-    let mut result = Vec::new(); let mut kind = String::new(); let mut device = String::new();
+    let output = Command::new("/usr/sbin/networksetup")
+        .arg("-listallhardwareports")
+        .output()
+        .ok();
+    let text = output
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default();
+    let mut result = Vec::new();
+    let mut kind = String::new();
+    let mut device = String::new();
     for line in text.lines().chain(std::iter::once("")) {
-        if let Some(value) = line.strip_prefix("Hardware Port: ") { kind = value.trim().to_string(); }
-        if let Some(value) = line.strip_prefix("Device: ") { device = value.trim().to_string(); }
+        if let Some(value) = line.strip_prefix("Hardware Port: ") {
+            kind = value.trim().to_string();
+        }
+        if let Some(value) = line.strip_prefix("Device: ") {
+            device = value.trim().to_string();
+        }
         if line.is_empty() && !device.is_empty() {
-            let body = Command::new("/sbin/ifconfig").arg(&device).output().ok().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
-            let addresses = body.lines().filter_map(|line| { let fields: Vec<_> = line.split_whitespace().collect(); if fields.first() == Some(&"inet") || fields.first() == Some(&"inet6") { fields.get(1).map(|x| x.split('%').next().unwrap_or(x).to_string()) } else { None } }).collect::<Vec<_>>();
-            if !addresses.is_empty() { result.push(NetworkInterface { name: device.clone(), kind: kind.clone(), addresses }); }
-            kind.clear(); device.clear();
+            let body = Command::new("/sbin/ifconfig")
+                .arg(&device)
+                .output()
+                .ok()
+                .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+                .unwrap_or_default();
+            let addresses = body
+                .lines()
+                .filter_map(|line| {
+                    let fields: Vec<_> = line.split_whitespace().collect();
+                    if fields.first() == Some(&"inet") || fields.first() == Some(&"inet6") {
+                        fields
+                            .get(1)
+                            .map(|x| x.split('%').next().unwrap_or(x).to_string())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            if !addresses.is_empty() {
+                result.push(NetworkInterface {
+                    name: device.clone(),
+                    kind: kind.clone(),
+                    addresses,
+                });
+            }
+            kind.clear();
+            device.clear();
         }
     }
     result
 }
 fn local_hostname() -> String {
-    Command::new("/bin/hostname").arg("-s").output().ok().filter(|output| output.status.success()).map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string()).filter(|value| !value.is_empty()).unwrap_or_else(|| "本机".into())
+    Command::new("/bin/hostname")
+        .arg("-s")
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "本机".into())
 }
 #[tauri::command]
 fn snapshot(state: State<AppState>) -> Snapshot {
@@ -159,36 +583,78 @@ fn snapshot(state: State<AppState>) -> Snapshot {
         ssh_forward_ports: state.ssh_forward.running_ports(),
     }
 }
-fn keychain_service() -> &'static str { "com.domainegress.client.ssh" }
+fn keychain_service() -> &'static str {
+    "com.domainegress.client.ssh"
+}
 #[tauri::command]
 fn keychain_set(account: String, secret: String) -> Result<(), String> {
-    if account.trim().is_empty() || secret.is_empty() { return Err("钥匙串账号和凭据不能为空".into()); }
-    let output = Command::new("/usr/bin/security").args(["add-generic-password", "-a", &account, "-s", keychain_service(), "-w", &secret, "-U"]).output().map_err(|e| e.to_string())?;
-    if output.status.success() { Ok(()) } else { Err(String::from_utf8_lossy(&output.stderr).trim().to_string()) }
+    if account.trim().is_empty() || secret.is_empty() {
+        return Err("钥匙串账号和凭据不能为空".into());
+    }
+    let output = Command::new("/usr/bin/security")
+        .args([
+            "add-generic-password",
+            "-a",
+            &account,
+            "-s",
+            keychain_service(),
+            "-w",
+            &secret,
+            "-U",
+        ])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
 }
 #[tauri::command]
 fn keychain_delete(account: String) -> Result<(), String> {
-    let output = Command::new("/usr/bin/security").args(["delete-generic-password", "-a", &account, "-s", keychain_service()]).output().map_err(|e| e.to_string())?;
-    if output.status.success() { Ok(()) } else { Err(String::from_utf8_lossy(&output.stderr).trim().to_string()) }
+    let output = Command::new("/usr/bin/security")
+        .args([
+            "delete-generic-password",
+            "-a",
+            &account,
+            "-s",
+            keychain_service(),
+        ])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
 }
 fn icloud_config_path() -> PathBuf {
     dirs::home_dir().unwrap_or_else(|| PathBuf::from("." )).join("Library/Mobile Documents/iCloud~com~domainegress~client/Documents/DomainEgress/config.json")
 }
 #[tauri::command]
-fn icloud_status() -> Result<bool, String> { Ok(icloud_config_path().parent().is_some_and(|p| p.exists())) }
+fn icloud_status() -> Result<bool, String> {
+    Ok(icloud_config_path().parent().is_some_and(|p| p.exists()))
+}
 #[tauri::command]
 fn icloud_sync(state: State<AppState>) -> Result<String, String> {
-    let path = icloud_config_path(); let parent = path.parent().ok_or_else(|| "iCloud 目录无效".to_string())?;
+    let path = icloud_config_path();
+    let parent = path.parent().ok_or_else(|| "iCloud 目录无效".to_string())?;
     fs::create_dir_all(parent).map_err(|e| format!("无法创建 iCloud 同步目录：{e}"))?;
-    let config = state.config.read().clone(); let data = serde_json::to_vec_pretty(&config).map_err(|e| e.to_string())?;
+    let config = state.config.read().clone();
+    let data = serde_json::to_vec_pretty(&config).map_err(|e| e.to_string())?;
     fs::write(&path, data).map_err(|e| format!("iCloud 配置写入失败：{e}"))?;
     Ok(path.display().to_string())
 }
 #[tauri::command]
 fn icloud_read() -> Result<Option<Config>, String> {
-    let path = icloud_config_path(); if !path.exists() { return Ok(None); }
+    let path = icloud_config_path();
+    if !path.exists() {
+        return Ok(None);
+    }
     let data = fs::read(&path).map_err(|e| e.to_string())?;
-    serde_json::from_slice(&data).map(Some).map_err(|e| format!("iCloud 配置格式无效：{e}"))
+    serde_json::from_slice(&data)
+        .map(Some)
+        .map_err(|e| format!("iCloud 配置格式无效：{e}"))
 }
 fn validate(config: &Config) -> Result<(), String> {
     if !["whitelist", "blacklist"].contains(&config.access_mode.as_str()) {
@@ -203,6 +669,9 @@ fn validate(config: &Config) -> Result<(), String> {
     if !(1..=21).contains(&config.trend_retention_days) {
         return Err("趋势历史保留天数应为 1–21".into());
     }
+    if ![90, 100, 110, 125].contains(&config.font_scale) {
+        return Err("文字大小仅支持 90%、100%、110% 或 125%".into());
+    }
     for (host, port) in [
         (&config.http_host, config.http_port),
         (&config.socks_host, config.socks_port),
@@ -215,7 +684,10 @@ fn validate(config: &Config) -> Result<(), String> {
         return Err("HTTP 与 SOCKS5 不能使用相同监听地址和端口".into());
     }
     for rule in config.whitelist.iter().chain(&config.blacklist) {
-        let host = rule.strip_prefix("*.").or_else(|| rule.strip_prefix('.')).unwrap_or(rule);
+        let host = rule
+            .strip_prefix("*.")
+            .or_else(|| rule.strip_prefix('.'))
+            .unwrap_or(rule);
         let valid_domain = host.len() <= 253
             && host.split('.').all(|part| {
                 !part.is_empty()
@@ -271,31 +743,57 @@ fn set_running(running: bool, state: State<AppState>) -> Result<(), String> {
 #[tauri::command]
 fn ssh_forward_start(id: String, state: State<AppState>) -> Result<u16, String> {
     let config_snapshot = state.config.read().clone();
-    let mut rule = config_snapshot.ssh_forwards.iter().find(|rule| rule.id == id).cloned().ok_or_else(|| "SSH 转发配置不存在".to_string())?;
+    let mut rule = config_snapshot
+        .ssh_forwards
+        .iter()
+        .find(|rule| rule.id == id)
+        .cloned()
+        .ok_or_else(|| "SSH 转发配置不存在".to_string())?;
     rule.ssh_options.extend(config_snapshot.ssh_forward_options);
     let port = state.ssh_forward.start(&rule).map_err(|e| e.to_string())?;
     let mut config = state.config.read().clone();
-    if let Some(item) = config.ssh_forwards.iter_mut().find(|item| item.id == id) { item.local_port = Some(port); }
-    config.save().map_err(|e| format!("SSH 转发配置保存失败：{e}"))?;
+    if let Some(item) = config.ssh_forwards.iter_mut().find(|item| item.id == id) {
+        item.local_port = Some(port);
+    }
+    config
+        .save()
+        .map_err(|e| format!("SSH 转发配置保存失败：{e}"))?;
     *state.config.write() = config;
     Ok(port)
 }
 #[tauri::command]
-fn ssh_forward_stop(id: String, state: State<AppState>) -> Result<(), String> { state.ssh_forward.stop(&id).map_err(|e| e.to_string()) }
+fn ssh_forward_stop(id: String, state: State<AppState>) -> Result<(), String> {
+    state.ssh_forward.stop(&id).map_err(|e| e.to_string())
+}
 fn update_tray_status(state: &AppState, running: bool) {
     if let Some(item) = state.tray_status.lock().as_ref() {
-        let _ = item.set_text(if running { "🟢 代理运行中" } else { "⚪ 代理已停止" });
+        let _ = item.set_text(if running {
+            "🟢 代理运行中"
+        } else {
+            "⚪ 代理已停止"
+        });
     }
     let menu = state.tray_menu.lock().clone();
     let start = state.tray_start.lock().clone();
     let stop = state.tray_stop.lock().clone();
-    if let (Some(menu), Some(start), Some(stop)) = (menu, start, stop) {
-        if running { let _ = menu.remove(&start); let _ = menu.append(&stop); }
-        else { let _ = menu.remove(&stop); let _ = menu.append(&start); }
+    let quit = state.tray_quit.lock().clone();
+    if let (Some(menu), Some(start), Some(stop), Some(quit)) = (menu, start, stop, quit) {
+        let (active, inactive) = if running { (&stop, &start) } else { (&start, &stop) };
+        let _ = menu.remove(inactive);
+        let _ = menu.remove(active);
+        let _ = menu.remove(&quit);
+        let _ = menu.append(active);
+        let _ = menu.append(&quit);
     }
     if let Some(icon) = state.tray_icon.lock().as_ref() {
-        let bytes: &[u8] = if running { &include_bytes!("../icons/tray-running.png")[..] } else { &include_bytes!("../icons/tray-stopped.png")[..] };
-        if let Ok(image) = tauri::image::Image::from_bytes(bytes) { let _ = icon.set_icon(Some(image)); }
+        let bytes: &[u8] = if running {
+            &include_bytes!("../icons/tray-running.png")[..]
+        } else {
+            &include_bytes!("../icons/tray-stopped.png")[..]
+        };
+        if let Ok(image) = tauri::image::Image::from_bytes(bytes) {
+            let _ = icon.set_icon(Some(image));
+        }
     }
 }
 #[derive(Serialize, Deserialize)]
@@ -306,35 +804,80 @@ struct GistRules {
     blacklist: Vec<String>,
 }
 fn gist_api_url(provider: &str, gist_id: &str) -> Result<String, String> {
-    if gist_id.trim().is_empty() { return Err("请填写 Gist ID".into()); }
+    if gist_id.trim().is_empty() {
+        return Err("请填写 Gist ID".into());
+    }
     match provider {
         "github" => Ok(format!("https://api.github.com/gists/{}", gist_id.trim())),
         "gitee" => Ok(format!("https://gitee.com/api/v5/gists/{}", gist_id.trim())),
         _ => Err("不支持的 Gist 服务商".into()),
     }
 }
-fn gist_request(url: &str, token: &str, method: &str, body: Option<String>) -> Result<serde_json::Value, String> {
+fn gist_request(
+    url: &str,
+    token: &str,
+    method: &str,
+    body: Option<String>,
+) -> Result<serde_json::Value, String> {
     let mut command = Command::new("/usr/bin/curl");
     command.args(["-sS", "-f", "-X", method, "-H", "Accept: application/json"]);
-    if !token.trim().is_empty() { command.args(["-H", &format!("Authorization: token {}", token.trim())]); }
-    if let Some(body) = body { command.args(["-H", "Content-Type: application/json", "--data-raw", &body]); }
-    let output = command.arg(url).output().map_err(|e| format!("请求 Gist 失败：{e}"))?;
-    if !output.status.success() { return Err(String::from_utf8_lossy(&output.stderr).trim().to_string()); }
+    if !token.trim().is_empty() {
+        command.args(["-H", &format!("Authorization: token {}", token.trim())]);
+    }
+    if let Some(body) = body {
+        command.args(["-H", "Content-Type: application/json", "--data-raw", &body]);
+    }
+    let output = command
+        .arg(url)
+        .output()
+        .map_err(|e| format!("请求 Gist 失败：{e}"))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
     serde_json::from_slice(&output.stdout).map_err(|e| format!("Gist 返回格式无效：{e}"))
 }
 #[tauri::command]
-fn gist_pull(provider: String, gist_id: String, file_name: String, token: String) -> Result<GistRules, String> {
+fn gist_pull(
+    provider: String,
+    gist_id: String,
+    file_name: String,
+    token: String,
+) -> Result<GistRules, String> {
     let response = gist_request(&gist_api_url(&provider, &gist_id)?, &token, "GET", None)?;
-    let file = response.get("files").and_then(|files| files.get(&file_name)).and_then(|file| file.get("content")).and_then(|content| content.as_str()).ok_or_else(|| format!("Gist 中未找到文件：{file_name}"))?;
+    let file = response
+        .get("files")
+        .and_then(|files| files.get(&file_name))
+        .and_then(|file| file.get("content"))
+        .and_then(|content| content.as_str())
+        .ok_or_else(|| format!("Gist 中未找到文件：{file_name}"))?;
     serde_json::from_str(file).map_err(|e| format!("规则文件格式无效：{e}"))
 }
 #[tauri::command]
-fn gist_push(provider: String, gist_id: String, file_name: String, token: String, config: Config) -> Result<(), String> {
-    if token.trim().is_empty() { return Err("推送 Gist 需要访问令牌".into()); }
-    let rules = GistRules { format: "domain-egress-rules".into(), version: 1, whitelist: config.whitelist, blacklist: config.blacklist };
+fn gist_push(
+    provider: String,
+    gist_id: String,
+    file_name: String,
+    token: String,
+    config: Config,
+) -> Result<(), String> {
+    if token.trim().is_empty() {
+        return Err("推送 Gist 需要访问令牌".into());
+    }
+    let rules = GistRules {
+        format: "domain-egress-rules".into(),
+        version: 1,
+        whitelist: config.whitelist,
+        blacklist: config.blacklist,
+    };
     let content = serde_json::to_string_pretty(&rules).map_err(|e| e.to_string())?;
     let body = serde_json::json!({ "files": { file_name: { "content": content } } }).to_string();
-    gist_request(&gist_api_url(&provider, &gist_id)?, &token, "PATCH", Some(body)).map(|_| ())
+    gist_request(
+        &gist_api_url(&provider, &gist_id)?,
+        &token,
+        "PATCH",
+        Some(body),
+    )
+    .map(|_| ())
 }
 #[tauri::command]
 fn clear_logs(state: State<AppState>) {
@@ -440,10 +983,19 @@ fn main() {
             let proxy = proxy::ProxyManager::new(shared.clone());
             let ssh = ssh::SshManager::new();
             let ssh_forward = ssh_forward::SshForwardManager::new();
+            let geoip =
+                GeoIpDatabases::load(&app.path().resource_dir().unwrap_or_else(|_| {
+                    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources")
+                }));
             if config.auto_start {
                 for rule in config.ssh_forwards.iter().filter(|rule| rule.auto_start) {
-                    let mut effective = rule.clone(); effective.ssh_options.extend(config.ssh_forward_options.clone());
-                    if let Err(error) = ssh_forward.start(&effective) { message = Some(format!("SSH 转发 {} 自动启动失败：{error}", rule.name)); }
+                    let mut effective = rule.clone();
+                    effective
+                        .ssh_options
+                        .extend(config.ssh_forward_options.clone());
+                    if let Err(error) = ssh_forward.start(&effective) {
+                        message = Some(format!("SSH 转发 {} 自动启动失败：{error}", rule.name));
+                    }
                 }
             }
             if config.auto_start {
@@ -474,7 +1026,9 @@ fn main() {
                 tray_menu: Mutex::new(None),
                 tray_start: Mutex::new(None),
                 tray_stop: Mutex::new(None),
+                tray_quit: Mutex::new(None),
                 message: Mutex::new(message),
+                geoip,
             });
             use tauri::{
                 menu::{Menu, MenuItem},
@@ -500,9 +1054,18 @@ fn main() {
             *app.state::<AppState>().tray_menu.lock() = Some(menu.clone());
             *app.state::<AppState>().tray_start.lock() = Some(start.clone());
             *app.state::<AppState>().tray_stop.lock() = Some(stop.clone());
+            *app.state::<AppState>().tray_quit.lock() = Some(quit.clone());
             let initially_running = app.state::<AppState>().proxy.is_running();
-            if initially_running { let _ = menu.remove(&start); } else { let _ = menu.remove(&stop); }
-            let initial_icon: &[u8] = if app.state::<AppState>().proxy.is_running() { &include_bytes!("../icons/tray-running.png")[..] } else { &include_bytes!("../icons/tray-stopped.png")[..] };
+            if initially_running {
+                let _ = menu.remove(&start);
+            } else {
+                let _ = menu.remove(&stop);
+            }
+            let initial_icon: &[u8] = if app.state::<AppState>().proxy.is_running() {
+                &include_bytes!("../icons/tray-running.png")[..]
+            } else {
+                &include_bytes!("../icons/tray-stopped.png")[..]
+            };
             let tray = TrayIconBuilder::new()
                 .icon(tauri::image::Image::from_bytes(initial_icon)?)
                 .tooltip("DomainEgress")
@@ -555,26 +1118,28 @@ fn main() {
             gist_pull,
             gist_push,
             list_ports,
-            terminate_process
-            ,keychain_set, keychain_delete, icloud_status, icloud_sync, icloud_read
+            terminate_process,
+            keychain_set,
+            keychain_delete,
+            icloud_status,
+            icloud_sync,
+            icloud_read
         ])
         .build(tauri::generate_context!())
         .expect("启动 DomainEgress 失败")
-        .run(|app, event| {
-            match event {
-                #[cfg(target_os = "macos")]
-                tauri::RunEvent::Reopen { .. } => {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
+        .run(|app, event| match event {
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
                 }
-                tauri::RunEvent::Exit => {
-                    let _ = app.state::<AppState>().proxy.stop();
-                    app.state::<AppState>().ssh_forward.stop_all();
-                }
-                _ => {}
             }
+            tauri::RunEvent::Exit => {
+                let _ = app.state::<AppState>().proxy.stop();
+                app.state::<AppState>().ssh_forward.stop_all();
+            }
+            _ => {}
         });
 }
 
@@ -585,11 +1150,34 @@ mod tests {
     fn config_validation() {
         let mut config = Config::default();
         assert!(validate(&config).is_ok());
+        assert!(!config.auto_start);
         config.whitelist.push("https://example.com/path".into());
         assert!(validate(&config).is_err());
         config.whitelist = vec!["*.example.com".into(), "::1".into()];
         assert!(validate(&config).is_ok());
+        config.font_scale = 105;
+        assert!(validate(&config).is_err());
+        config.font_scale = 110;
+        assert!(validate(&config).is_ok());
         config.socks_port = config.http_port;
         assert!(validate(&config).is_err());
+    }
+
+    #[test]
+    fn parses_ip2region_location_and_discards_reserved_records() {
+        let location = parse_ip2region_location("中国|广东省|深圳市|电信|CN").unwrap();
+        assert_eq!(location.country, "中国");
+        assert_eq!(location.city, "深圳市");
+        assert_eq!(location.country_code, "CN");
+        assert_eq!(location.confidence, "离线兜底");
+        assert!(parse_ip2region_location("0|0|Reserved|Reserved|Reserved").is_none());
+    }
+
+    #[test]
+    fn public_ip_family_rejects_wrong_address_family() {
+        assert!(public_ip_family("8.8.8.8", "IPv4").is_ok());
+        assert!(public_ip_family("2001:4860:4860::8888", "IPv6").is_ok());
+        assert!(public_ip_family("8.8.8.8", "IPv6").is_err());
+        assert!(public_ip_family("2001:4860:4860::8888", "IPv4").is_err());
     }
 }
