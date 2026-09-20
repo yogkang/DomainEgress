@@ -18,6 +18,7 @@ STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
 
 mkdir -p "$DMG_DIR"
+codesign --force --deep --sign - "$APP_SOURCE"
 cp -R "$APP_SOURCE" "$STAGE/DomainEgress.app"
 cp "$DOC_SOURCE" "$STAGE/DomainEgress-使用说明.md"
 diskutil image create from --volname "DomainEgress" --format UDZO "$STAGE" "$DMG_PATH" >/dev/null

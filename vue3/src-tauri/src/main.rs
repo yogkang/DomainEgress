@@ -1,3 +1,4 @@
+mod cloud;
 #[path = "../../../src/config.rs"]
 mod config;
 #[path = "../../../src/policy.rs"]
@@ -18,9 +19,9 @@ use tauri::{Manager, State};
 struct AppState {
     config: Arc<RwLock<Config>>,
     proxy: proxy::ProxyManager,
-    ssh: ssh::SshManager,
-    ssh_forward: ssh_forward::SshForwardManager,
-    operation: Mutex<()>,
+    ssh: Arc<ssh::SshManager>,
+    ssh_forward: Arc<ssh_forward::SshForwardManager>,
+    operation: Arc<Mutex<()>>,
     tray_status: Mutex<Option<tauri::menu::MenuItem<tauri::Wry>>>,
     tray_icon: Mutex<Option<tauri::tray::TrayIcon<tauri::Wry>>>,
     tray_menu: Mutex<Option<tauri::menu::Menu<tauri::Wry>>>,
@@ -28,7 +29,7 @@ struct AppState {
     tray_stop: Mutex<Option<tauri::menu::MenuItem<tauri::Wry>>>,
     tray_quit: Mutex<Option<tauri::menu::MenuItem<tauri::Wry>>>,
     message: Mutex<Option<String>>,
-    geoip: GeoIpDatabases,
+    geoip: Arc<GeoIpDatabases>,
 }
 #[derive(Serialize)]
 struct Snapshot {
@@ -60,11 +61,22 @@ struct GeoLocation {
     confidence: String,
 }
 #[derive(Clone, Serialize)]
-struct EgressAddress { ip: String, source: String, location: Option<GeoLocation> }
+struct EgressAddress {
+    ip: String,
+    source: String,
+    location: Option<GeoLocation>,
+}
 #[derive(Clone, Serialize)]
-struct EgressProbe { addresses: Vec<EgressAddress>, confidence: String, error: Option<String> }
+struct EgressProbe {
+    addresses: Vec<EgressAddress>,
+    confidence: String,
+    error: Option<String>,
+}
 #[derive(Clone, Serialize)]
-struct PublicIpProbe { system: EgressProbe, ipv6: Option<EgressProbe> }
+struct PublicIpProbe {
+    system: EgressProbe,
+    ipv6: Option<EgressProbe>,
+}
 struct GeoIpDatabases {
     ipv4: Option<ip2region::Searcher>,
     ipv6: Option<ip2region::Searcher>,
@@ -86,7 +98,7 @@ struct UpdateInfo {
     available: bool,
     error: Option<String>,
 }
-const APP_VERSION: &str = "0.2.1";
+const APP_VERSION: &str = "0.3.0";
 fn version_tuple(value: &str) -> Option<(u64, u64, u64)> {
     let values = value
         .trim()
@@ -97,7 +109,13 @@ fn version_tuple(value: &str) -> Option<(u64, u64, u64)> {
     (values.len() >= 3).then_some((values[0], values[1], values[2]))
 }
 #[tauri::command]
-fn check_update() -> UpdateInfo {
+async fn check_update() -> Result<UpdateInfo, String> {
+    tauri::async_runtime::spawn_blocking(check_update_blocking)
+        .await
+        .map_err(|error| format!("检查更新任务异常结束：{error}"))
+}
+
+fn check_update_blocking() -> UpdateInfo {
     let output = Command::new("/usr/bin/curl")
         .args([
             "--fail",
@@ -166,7 +184,12 @@ fn check_update() -> UpdateInfo {
     }
 }
 #[tauri::command]
-fn open_update(url: String) -> Result<(), String> {
+async fn open_update(url: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || open_update_blocking(url))
+        .await
+        .map_err(|error| format!("打开更新页面任务异常结束：{error}"))?
+}
+fn open_update_blocking(url: String) -> Result<(), String> {
     if !url.starts_with("https://github.com/yogkang/DomainEgress/releases/") {
         return Err("更新地址不受信任".into());
     }
@@ -208,9 +231,36 @@ fn fetch_public_ip(url: &str, ssh_port: Option<u16>) -> Result<String, String> {
     }
     validate_public_ip(String::from_utf8_lossy(&output.stdout).trim())
 }
+const IPV4_HTTP_SOURCES: [&str; 4] = [
+    "https://api.ipify.org",
+    "https://checkip.amazonaws.com",
+    "https://icanhazip.com",
+    "https://ifconfig.me/ip",
+];
+const IPV6_HTTP_SOURCES: [&str; 1] = ["https://api6.ipify.org"];
+
+fn fetch_public_ip_from_http_sources(
+    sources: &[&str],
+    family: &str,
+) -> Result<(String, String), String> {
+    let mut errors = Vec::new();
+    for url in sources {
+        match fetch_public_ip(url, None).and_then(|ip| public_ip_family(&ip, family)) {
+            Ok(ip) => return Ok((ip, (*url).to_string())),
+            Err(error) => errors.push(format!("{url}：{error}")),
+        }
+    }
+    Err(format!("所有 HTTP 探测源均失败：{}", errors.join("；")))
+}
 fn fetch_public_ip_dns(record_type: &str) -> Result<String, String> {
     let output = Command::new("/usr/bin/dig")
-        .args(["+tcp", "@208.67.222.222", "myip.opendns.com", record_type, "+short"])
+        .args([
+            "+tcp",
+            "@208.67.222.222",
+            "myip.opendns.com",
+            record_type,
+            "+short",
+        ])
         .output()
         .map_err(|e| e.to_string())?;
     if !output.status.success() {
@@ -254,7 +304,10 @@ fn parse_ipwho_location(ip: &str, value: &serde_json::Value) -> Result<OnlineGeo
         source: "ipwho",
     })
 }
-fn parse_ipwhois_location(ip: &str, value: &serde_json::Value) -> Result<OnlineGeoLocation, String> {
+fn parse_ipwhois_location(
+    ip: &str,
+    value: &serde_json::Value,
+) -> Result<OnlineGeoLocation, String> {
     if value.get("success").and_then(|item| item.as_bool()) == Some(false) {
         return Err(value_string(value, "message").unwrap_or_else(|| "ipwhois 返回失败".into()));
     }
@@ -262,7 +315,8 @@ fn parse_ipwhois_location(ip: &str, value: &serde_json::Value) -> Result<OnlineG
         return Err("ipwhois 返回的 IP 不匹配".into());
     }
     let country = value_string(value, "country").ok_or_else(|| "ipwhois 未返回国家".to_string())?;
-    let country_code = value_string(value, "country_code").ok_or_else(|| "ipwhois 未返回国家代码".to_string())?;
+    let country_code =
+        value_string(value, "country_code").ok_or_else(|| "ipwhois 未返回国家代码".to_string())?;
     Ok(OnlineGeoLocation {
         country,
         country_code,
@@ -451,9 +505,17 @@ fn validate_public_ip(value: &str) -> Result<String, String> {
 }
 fn resolve_address(ip: String, source: &str, geoip: &GeoIpDatabases) -> EgressAddress {
     let location = fetch_online_location(&ip, None)
-        .or_else(|_| geoip.lookup(&ip).ok_or_else(|| String::from("离线归属地库未命中")))
+        .or_else(|_| {
+            geoip
+                .lookup(&ip)
+                .ok_or_else(|| String::from("离线归属地库未命中"))
+        })
         .ok();
-    EgressAddress { ip, source: source.into(), location }
+    EgressAddress {
+        ip,
+        source: source.into(),
+        location,
+    }
 }
 fn public_ip_family(ip: &str, family: &str) -> Result<String, String> {
     let ip = validate_public_ip(ip)?;
@@ -462,27 +524,35 @@ fn public_ip_family(ip: &str, family: &str) -> Result<String, String> {
         _ => Err(format!("来源未返回 {family} 公网地址")),
     }
 }
-fn probe_ip_family_route(geoip: &GeoIpDatabases, family: &str, http_url: &str, dns_record_type: &str) -> EgressProbe {
-    let http = fetch_public_ip(http_url, None).and_then(|ip| public_ip_family(&ip, family));
+fn probe_ip_family_route(
+    geoip: &GeoIpDatabases,
+    family: &str,
+    http_urls: &[&str],
+    dns_record_type: &str,
+) -> EgressProbe {
+    let http = fetch_public_ip_from_http_sources(http_urls, family);
     let dns = fetch_public_ip_dns(dns_record_type).and_then(|ip| public_ip_family(&ip, family));
-    let http_source = format!("HTTP · {http_url}");
     let dns_source = "DNS/TCP · 208.67.222.222";
     match (http, dns) {
-        (Ok(http), Ok(dns)) if http == dns => EgressProbe {
-            addresses: vec![resolve_address(http, &format!("{http_source}；{dns_source}"), geoip)],
+        (Ok((http, http_url)), Ok(dns)) if http == dns => EgressProbe {
+            addresses: vec![resolve_address(
+                http,
+                &format!("HTTP · {http_url}；{dns_source}"),
+                geoip,
+            )],
             confidence: "HTTP 与 DNS 一致".into(),
             error: None,
         },
-        (Ok(http), Ok(dns)) => EgressProbe {
+        (Ok((http, http_url)), Ok(dns)) => EgressProbe {
             addresses: vec![
-                resolve_address(http, &http_source, geoip),
+                resolve_address(http, &format!("HTTP · {http_url}"), geoip),
                 resolve_address(dns, dns_source, geoip),
             ],
             confidence: "HTTP 与 DNS 不一致".into(),
             error: None,
         },
-        (Ok(http), Err(dns_error)) => EgressProbe {
-            addresses: vec![resolve_address(http, &http_source, geoip)],
+        (Ok((http, http_url)), Err(dns_error)) => EgressProbe {
+            addresses: vec![resolve_address(http, &format!("HTTP · {http_url}"), geoip)],
             confidence: "仅 HTTP 成功".into(),
             error: Some(format!("DNS/TCP 探测失败：{dns_error}")),
         },
@@ -499,12 +569,39 @@ fn probe_ip_family_route(geoip: &GeoIpDatabases, family: &str, http_url: &str, d
     }
 }
 #[tauri::command]
-fn probe_public_ip(state: State<AppState>) -> PublicIpProbe {
-    let system = probe_ip_family_route(&state.geoip, "IPv4", "https://api.ipify.org", "A");
-    let ipv6_probe = probe_ip_family_route(&state.geoip, "IPv6", "https://api6.ipify.org", "AAAA");
-    PublicIpProbe {
-        system,
-        ipv6: (!ipv6_probe.addresses.is_empty()).then_some(ipv6_probe),
+async fn probe_public_ip(state: State<'_, AppState>) -> Result<PublicIpProbe, String> {
+    let geoip = Arc::clone(&state.geoip);
+    tauri::async_runtime::spawn_blocking(move || {
+        let system = probe_ip_family_route(&geoip, "IPv4", &IPV4_HTTP_SOURCES, "A");
+        let ipv6_probe = probe_ip_family_route(&geoip, "IPv6", &IPV6_HTTP_SOURCES, "AAAA");
+        PublicIpProbe {
+            system,
+            ipv6: (!ipv6_probe.addresses.is_empty()).then_some(ipv6_probe),
+        }
+    })
+    .await
+    .map_err(|error| format!("公网 IP 探测任务异常结束：{error}"))
+}
+fn trusted_public_ipv4() -> Result<String, String> {
+    let http = fetch_public_ip_from_http_sources(&IPV4_HTTP_SOURCES, "IPv4");
+    let dns = fetch_public_ip_dns("A").and_then(|ip| public_ip_family(&ip, "IPv4"));
+    select_trusted_public_ipv4(http.map(|(ip, _)| ip), dns)
+}
+
+fn select_trusted_public_ipv4(
+    http: Result<String, String>,
+    dns: Result<String, String>,
+) -> Result<String, String> {
+    match (http, dns) {
+        (Ok(http), Ok(dns)) if http == dns => Ok(format!("{http}/32")),
+        (Ok(http), Ok(dns)) => Err(format!(
+            "公网 IPv4 多源探测结果不一致，已停止写入阿里云安全组：HTTP={http}，DNS={dns}"
+        )),
+        (Ok(http), Err(_)) => Ok(format!("{http}/32")),
+        (Err(_), Ok(dns)) => Ok(format!("{dns}/32")),
+        (Err(http_error), Err(dns_error)) => Err(format!(
+            "所有公网 IPv4 探测源均失败，已停止写入阿里云安全组：HTTP：{http_error}；DNS：{dns_error}"
+        )),
     }
 }
 fn local_interfaces() -> Vec<NetworkInterface> {
@@ -569,25 +666,42 @@ fn local_hostname() -> String {
         .unwrap_or_else(|| "本机".into())
 }
 #[tauri::command]
-fn snapshot(state: State<AppState>) -> Snapshot {
-    Snapshot {
-        config: state.config.read().clone(),
-        running: state.proxy.is_running(),
-        logs: state.proxy.logs(),
-        traffic: state.proxy.traffic(),
-        message: state.message.lock().take(),
-        ssh_running: state.ssh.is_running(),
-        ssh_local_port: state.ssh.local_port(),
-        interfaces: local_interfaces(),
-        hostname: local_hostname(),
-        ssh_forward_ports: state.ssh_forward.running_ports(),
-    }
+async fn snapshot(state: State<'_, AppState>) -> Result<Snapshot, String> {
+    let config = state.config.read().clone();
+    let running = state.proxy.is_running();
+    let logs = state.proxy.logs();
+    let traffic = state.proxy.traffic();
+    let message = state.message.lock().take();
+    let ssh_running = state.ssh.is_running();
+    let ssh_local_port = state.ssh.local_port();
+    let ssh_forward_ports = state.ssh_forward.running_ports();
+    let (interfaces, hostname) =
+        tauri::async_runtime::spawn_blocking(|| (local_interfaces(), local_hostname()))
+            .await
+            .map_err(|error| format!("读取本机网络信息任务异常结束：{error}"))?;
+    Ok(Snapshot {
+        config,
+        running,
+        logs,
+        traffic,
+        message,
+        ssh_running,
+        ssh_local_port,
+        interfaces,
+        hostname,
+        ssh_forward_ports,
+    })
 }
 fn keychain_service() -> &'static str {
     "com.domainegress.client.ssh"
 }
 #[tauri::command]
-fn keychain_set(account: String, secret: String) -> Result<(), String> {
+async fn keychain_set(account: String, secret: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || keychain_set_blocking(account, secret))
+        .await
+        .map_err(|error| format!("保存钥匙串任务异常结束：{error}"))?
+}
+fn keychain_set_blocking(account: String, secret: String) -> Result<(), String> {
     if account.trim().is_empty() || secret.is_empty() {
         return Err("钥匙串账号和凭据不能为空".into());
     }
@@ -611,7 +725,12 @@ fn keychain_set(account: String, secret: String) -> Result<(), String> {
     }
 }
 #[tauri::command]
-fn keychain_delete(account: String) -> Result<(), String> {
+async fn keychain_delete(account: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || keychain_delete_blocking(account))
+        .await
+        .map_err(|error| format!("删除钥匙串任务异常结束：{error}"))?
+}
+fn keychain_delete_blocking(account: String) -> Result<(), String> {
     let output = Command::new("/usr/bin/security")
         .args([
             "delete-generic-password",
@@ -628,33 +747,145 @@ fn keychain_delete(account: String) -> Result<(), String> {
         Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
     }
 }
+#[tauri::command]
+async fn list_cloud_accounts() -> Result<Vec<cloud::CloudAccountSummary>, String> {
+    tauri::async_runtime::spawn_blocking(cloud::list_accounts)
+        .await
+        .map_err(|error| format!("读取云账号任务异常结束：{error}"))?
+}
+#[tauri::command]
+async fn save_cloud_account(
+    input: cloud::SaveCloudAccountInput,
+) -> Result<cloud::CloudAccountSummary, String> {
+    tauri::async_runtime::spawn_blocking(move || cloud::save_account(input))
+        .await
+        .map_err(|error| format!("保存云账号任务异常结束：{error}"))?
+}
+#[tauri::command]
+async fn verify_cloud_account(id: String) -> Result<cloud::CloudAccountSummary, String> {
+    tauri::async_runtime::spawn_blocking(move || cloud::verify_account(&id))
+        .await
+        .map_err(|error| format!("验证云账号任务异常结束：{error}"))?
+}
+#[tauri::command]
+async fn list_cloud_regions(account_id: String) -> Result<Vec<cloud::CloudRegion>, String> {
+    tauri::async_runtime::spawn_blocking(move || cloud::list_regions(&account_id))
+        .await
+        .map_err(|error| format!("读取云地域任务异常结束：{error}"))?
+}
+#[tauri::command]
+async fn list_cloud_security_groups(
+    account_id: String,
+    region: String,
+) -> Result<Vec<cloud::CloudSecurityGroup>, String> {
+    tauri::async_runtime::spawn_blocking(move || cloud::list_security_groups(&account_id, &region))
+        .await
+        .map_err(|error| format!("读取安全组任务异常结束：{error}"))?
+}
+#[tauri::command]
+async fn list_cloud_security_group_rules(
+    account_id: String,
+    region: String,
+    security_group_id: String,
+) -> Result<Vec<cloud::CloudSecurityRule>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        cloud::list_security_group_rules(&account_id, &region, &security_group_id)
+    })
+    .await
+    .map_err(|error| format!("读取安全组规则任务异常结束：{error}"))?
+}
+#[tauri::command]
+async fn list_cloud_managed_rules() -> Result<Vec<cloud::ManagedRuleConfig>, String> {
+    tauri::async_runtime::spawn_blocking(cloud::list_managed_rules)
+        .await
+        .map_err(|error| format!("读取受管规则任务异常结束：{error}"))?
+}
+#[tauri::command]
+async fn preview_cloud_managed_source() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(trusted_public_ipv4)
+        .await
+        .map_err(|error| format!("探测授权对象任务异常结束：{error}"))?
+}
+#[tauri::command]
+async fn create_cloud_managed_rule(
+    input: cloud::CreateManagedRuleInput,
+) -> Result<cloud::ManagedRuleSyncResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let source_cidr = trusted_public_ipv4()?;
+        cloud::create_managed_rule(input, &source_cidr)
+    })
+    .await
+    .map_err(|error| format!("创建受管规则任务异常结束：{error}"))?
+}
+#[tauri::command]
+async fn sync_cloud_managed_rule(id: String) -> Result<cloud::ManagedRuleSyncResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let source_cidr = trusted_public_ipv4()?;
+        cloud::sync_managed_rule(&id, &source_cidr)
+    })
+    .await
+    .map_err(|error| format!("同步受管规则任务异常结束：{error}"))?
+}
+#[tauri::command]
+async fn sync_all_cloud_managed_rules() -> Result<Vec<cloud::ManagedRuleSyncResult>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let source_cidr = trusted_public_ipv4()?;
+        cloud::sync_all_managed_rules(&source_cidr)
+    })
+    .await
+    .map_err(|error| format!("同步全部受管规则任务异常结束：{error}"))?
+}
+#[tauri::command]
+async fn delete_cloud_managed_rule(id: String, revoke_remote: bool) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || cloud::delete_managed_rule(&id, revoke_remote))
+        .await
+        .map_err(|error| format!("删除受管规则任务异常结束：{error}"))?
+}
+#[tauri::command]
+async fn delete_cloud_account(id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || cloud::delete_account(&id))
+        .await
+        .map_err(|error| format!("删除云账号任务异常结束：{error}"))?
+}
 fn icloud_config_path() -> PathBuf {
     dirs::home_dir().unwrap_or_else(|| PathBuf::from("." )).join("Library/Mobile Documents/iCloud~com~domainegress~client/Documents/DomainEgress/config.json")
 }
 #[tauri::command]
-fn icloud_status() -> Result<bool, String> {
-    Ok(icloud_config_path().parent().is_some_and(|p| p.exists()))
+async fn icloud_status() -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        Ok(icloud_config_path().parent().is_some_and(|p| p.exists()))
+    })
+    .await
+    .map_err(|error| format!("检查 iCloud 状态任务异常结束：{error}"))?
 }
 #[tauri::command]
-fn icloud_sync(state: State<AppState>) -> Result<String, String> {
-    let path = icloud_config_path();
-    let parent = path.parent().ok_or_else(|| "iCloud 目录无效".to_string())?;
-    fs::create_dir_all(parent).map_err(|e| format!("无法创建 iCloud 同步目录：{e}"))?;
+async fn icloud_sync(state: State<'_, AppState>) -> Result<String, String> {
     let config = state.config.read().clone();
-    let data = serde_json::to_vec_pretty(&config).map_err(|e| e.to_string())?;
-    fs::write(&path, data).map_err(|e| format!("iCloud 配置写入失败：{e}"))?;
-    Ok(path.display().to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = icloud_config_path();
+        let parent = path.parent().ok_or_else(|| "iCloud 目录无效".to_string())?;
+        fs::create_dir_all(parent).map_err(|e| format!("无法创建 iCloud 同步目录：{e}"))?;
+        let data = serde_json::to_vec_pretty(&config).map_err(|e| e.to_string())?;
+        fs::write(&path, data).map_err(|e| format!("iCloud 配置写入失败：{e}"))?;
+        Ok(path.display().to_string())
+    })
+    .await
+    .map_err(|error| format!("iCloud 同步任务异常结束：{error}"))?
 }
 #[tauri::command]
-fn icloud_read() -> Result<Option<Config>, String> {
-    let path = icloud_config_path();
-    if !path.exists() {
-        return Ok(None);
-    }
-    let data = fs::read(&path).map_err(|e| e.to_string())?;
-    serde_json::from_slice(&data)
-        .map(Some)
-        .map_err(|e| format!("iCloud 配置格式无效：{e}"))
+async fn icloud_read() -> Result<Option<Config>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let path = icloud_config_path();
+        if !path.exists() {
+            return Ok(None);
+        }
+        let data = fs::read(&path).map_err(|e| e.to_string())?;
+        serde_json::from_slice(&data)
+            .map(Some)
+            .map_err(|e| format!("iCloud 配置格式无效：{e}"))
+    })
+    .await
+    .map_err(|error| format!("iCloud 读取任务异常结束：{error}"))?
 }
 fn validate(config: &Config) -> Result<(), String> {
     if !["whitelist", "blacklist"].contains(&config.access_mode.as_str()) {
@@ -703,67 +934,111 @@ fn validate(config: &Config) -> Result<(), String> {
     Ok(())
 }
 #[tauri::command]
-fn save_config(config: Config, state: State<AppState>) -> Result<(), String> {
-    validate(&config)?;
-    let _operation = state.operation.lock();
-    let previous = state.config.read().clone();
-    let changed = previous.http_host != config.http_host
-        || previous.http_port != config.http_port
-        || previous.socks_host != config.socks_host
-        || previous.socks_port != config.socks_port;
-    if state.proxy.is_running() && changed {
-        return Err("请先停止代理，再修改监听地址或端口".into());
-    }
-    config.save().map_err(|e| format!("配置保存失败：{e}"))?;
-    *state.config.write() = config;
-    Ok(())
-}
-#[tauri::command]
-fn set_running(running: bool, state: State<AppState>) -> Result<(), String> {
-    let _operation = state.operation.lock();
-    if running {
-        validate(&state.config.read())?;
-        if let Some(id) = state.config.read().active_ssh_profile.clone() {
-            if let Some(profile) = state.config.read().ssh_profiles.iter().find(|p| p.id == id) {
-                let port = state.ssh.start(profile).map_err(|e| e.to_string())?;
-                state.config.write().ssh_proxy_port = Some(port);
-            }
+async fn save_config(config: Config, state: State<'_, AppState>) -> Result<(), String> {
+    let operation = Arc::clone(&state.operation);
+    let shared = Arc::clone(&state.config);
+    let proxy = state.proxy.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        validate(&config)?;
+        let _operation = operation.lock();
+        let previous = shared.read().clone();
+        let changed = previous.http_host != config.http_host
+            || previous.http_port != config.http_port
+            || previous.socks_host != config.socks_host
+            || previous.socks_port != config.socks_port;
+        if proxy.is_running() && changed {
+            return Err("请先停止代理，再修改监听地址或端口".into());
         }
-        state.proxy.start()
-    } else {
-        let result = state.proxy.stop();
-        let _ = state.ssh.stop();
-        state.config.write().ssh_proxy_port = None;
-        result
-    }
-    .map_err(|e| e.to_string())?;
-    update_tray_status(&state, running);
+        config.save().map_err(|e| format!("配置保存失败：{e}"))?;
+        *shared.write() = config;
+        Ok(())
+    })
+    .await
+    .map_err(|error| format!("保存配置任务异常结束：{error}"))?
+}
+#[tauri::command]
+async fn set_running(running: bool, state: State<'_, AppState>) -> Result<(), String> {
+    let operation = Arc::clone(&state.operation);
+    let shared = Arc::clone(&state.config);
+    let proxy = state.proxy.clone();
+    let ssh = Arc::clone(&state.ssh);
+    tauri::async_runtime::spawn_blocking(move || {
+        let _operation = operation.lock();
+        if running {
+            validate(&shared.read())?;
+            if let Some(id) = shared.read().active_ssh_profile.clone() {
+                let profile = {
+                    shared
+                        .read()
+                        .ssh_profiles
+                        .iter()
+                        .find(|profile| profile.id == id)
+                        .cloned()
+                };
+                if let Some(profile) = profile {
+                    let port = ssh.start(&profile).map_err(|e| e.to_string())?;
+                    shared.write().ssh_proxy_port = Some(port);
+                }
+            }
+            if let Err(error) = proxy.start() {
+                let cleanup_error = ssh.stop().err();
+                shared.write().ssh_proxy_port = None;
+                return Err(match cleanup_error {
+                    Some(cleanup_error) => {
+                        format!("{error}；同时停止 SSH 代理失败：{cleanup_error}")
+                    }
+                    None => error.to_string(),
+                });
+            }
+            Ok(())
+        } else {
+            let result = proxy.stop();
+            let _ = ssh.stop();
+            shared.write().ssh_proxy_port = None;
+            result
+        }
+        .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|error| format!("切换代理状态任务异常结束：{error}"))??;
+    update_tray_status(&state, state.proxy.is_running());
     Ok(())
 }
 #[tauri::command]
-fn ssh_forward_start(id: String, state: State<AppState>) -> Result<u16, String> {
-    let config_snapshot = state.config.read().clone();
-    let mut rule = config_snapshot
-        .ssh_forwards
-        .iter()
-        .find(|rule| rule.id == id)
-        .cloned()
-        .ok_or_else(|| "SSH 转发配置不存在".to_string())?;
-    rule.ssh_options.extend(config_snapshot.ssh_forward_options);
-    let port = state.ssh_forward.start(&rule).map_err(|e| e.to_string())?;
-    let mut config = state.config.read().clone();
-    if let Some(item) = config.ssh_forwards.iter_mut().find(|item| item.id == id) {
-        item.local_port = Some(port);
-    }
-    config
-        .save()
-        .map_err(|e| format!("SSH 转发配置保存失败：{e}"))?;
-    *state.config.write() = config;
-    Ok(port)
+async fn ssh_forward_start(id: String, state: State<'_, AppState>) -> Result<u16, String> {
+    let shared = Arc::clone(&state.config);
+    let manager = Arc::clone(&state.ssh_forward);
+    let operation = Arc::clone(&state.operation);
+    tauri::async_runtime::spawn_blocking(move || {
+        let _operation = operation.lock();
+        let config_snapshot = shared.read().clone();
+        let mut rule = config_snapshot
+            .ssh_forwards
+            .iter()
+            .find(|rule| rule.id == id)
+            .cloned()
+            .ok_or_else(|| "SSH 转发配置不存在".to_string())?;
+        rule.ssh_options.extend(config_snapshot.ssh_forward_options);
+        let port = manager.start(&rule).map_err(|e| e.to_string())?;
+        let mut config = shared.read().clone();
+        if let Some(item) = config.ssh_forwards.iter_mut().find(|item| item.id == id) {
+            item.local_port = Some(port);
+        }
+        config
+            .save()
+            .map_err(|e| format!("SSH 转发配置保存失败：{e}"))?;
+        *shared.write() = config;
+        Ok(port)
+    })
+    .await
+    .map_err(|error| format!("启动 SSH 转发任务异常结束：{error}"))?
 }
 #[tauri::command]
-fn ssh_forward_stop(id: String, state: State<AppState>) -> Result<(), String> {
-    state.ssh_forward.stop(&id).map_err(|e| e.to_string())
+async fn ssh_forward_stop(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let manager = Arc::clone(&state.ssh_forward);
+    tauri::async_runtime::spawn_blocking(move || manager.stop(&id).map_err(|e| e.to_string()))
+        .await
+        .map_err(|error| format!("停止 SSH 转发任务异常结束：{error}"))?
 }
 fn update_tray_status(state: &AppState, running: bool) {
     if let Some(item) = state.tray_status.lock().as_ref() {
@@ -778,7 +1053,11 @@ fn update_tray_status(state: &AppState, running: bool) {
     let stop = state.tray_stop.lock().clone();
     let quit = state.tray_quit.lock().clone();
     if let (Some(menu), Some(start), Some(stop), Some(quit)) = (menu, start, stop, quit) {
-        let (active, inactive) = if running { (&stop, &start) } else { (&start, &stop) };
+        let (active, inactive) = if running {
+            (&stop, &start)
+        } else {
+            (&start, &stop)
+        };
         let _ = menu.remove(inactive);
         let _ = menu.remove(active);
         let _ = menu.remove(&quit);
@@ -837,47 +1116,56 @@ fn gist_request(
     serde_json::from_slice(&output.stdout).map_err(|e| format!("Gist 返回格式无效：{e}"))
 }
 #[tauri::command]
-fn gist_pull(
+async fn gist_pull(
     provider: String,
     gist_id: String,
     file_name: String,
     token: String,
 ) -> Result<GistRules, String> {
-    let response = gist_request(&gist_api_url(&provider, &gist_id)?, &token, "GET", None)?;
-    let file = response
-        .get("files")
-        .and_then(|files| files.get(&file_name))
-        .and_then(|file| file.get("content"))
-        .and_then(|content| content.as_str())
-        .ok_or_else(|| format!("Gist 中未找到文件：{file_name}"))?;
-    serde_json::from_str(file).map_err(|e| format!("规则文件格式无效：{e}"))
+    tauri::async_runtime::spawn_blocking(move || {
+        let response = gist_request(&gist_api_url(&provider, &gist_id)?, &token, "GET", None)?;
+        let file = response
+            .get("files")
+            .and_then(|files| files.get(&file_name))
+            .and_then(|file| file.get("content"))
+            .and_then(|content| content.as_str())
+            .ok_or_else(|| format!("Gist 中未找到文件：{file_name}"))?;
+        serde_json::from_str(file).map_err(|e| format!("规则文件格式无效：{e}"))
+    })
+    .await
+    .map_err(|error| format!("拉取 Gist 任务异常结束：{error}"))?
 }
 #[tauri::command]
-fn gist_push(
+async fn gist_push(
     provider: String,
     gist_id: String,
     file_name: String,
     token: String,
     config: Config,
 ) -> Result<(), String> {
-    if token.trim().is_empty() {
-        return Err("推送 Gist 需要访问令牌".into());
-    }
-    let rules = GistRules {
-        format: "domain-egress-rules".into(),
-        version: 1,
-        whitelist: config.whitelist,
-        blacklist: config.blacklist,
-    };
-    let content = serde_json::to_string_pretty(&rules).map_err(|e| e.to_string())?;
-    let body = serde_json::json!({ "files": { file_name: { "content": content } } }).to_string();
-    gist_request(
-        &gist_api_url(&provider, &gist_id)?,
-        &token,
-        "PATCH",
-        Some(body),
-    )
-    .map(|_| ())
+    tauri::async_runtime::spawn_blocking(move || {
+        if token.trim().is_empty() {
+            return Err("推送 Gist 需要访问令牌".into());
+        }
+        let rules = GistRules {
+            format: "domain-egress-rules".into(),
+            version: 1,
+            whitelist: config.whitelist,
+            blacklist: config.blacklist,
+        };
+        let content = serde_json::to_string_pretty(&rules).map_err(|e| e.to_string())?;
+        let body =
+            serde_json::json!({ "files": { file_name: { "content": content } } }).to_string();
+        gist_request(
+            &gist_api_url(&provider, &gist_id)?,
+            &token,
+            "PATCH",
+            Some(body),
+        )
+        .map(|_| ())
+    })
+    .await
+    .map_err(|error| format!("推送 Gist 任务异常结束：{error}"))?
 }
 #[tauri::command]
 fn clear_logs(state: State<AppState>) {
@@ -981,8 +1269,8 @@ fn main() {
             };
             let shared = Arc::new(RwLock::new(config.clone()));
             let proxy = proxy::ProxyManager::new(shared.clone());
-            let ssh = ssh::SshManager::new();
-            let ssh_forward = ssh_forward::SshForwardManager::new();
+            let ssh = Arc::new(ssh::SshManager::new());
+            let ssh_forward = Arc::new(ssh_forward::SshForwardManager::new());
             let geoip =
                 GeoIpDatabases::load(&app.path().resource_dir().unwrap_or_else(|_| {
                     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources")
@@ -1020,7 +1308,7 @@ fn main() {
                 proxy,
                 ssh,
                 ssh_forward,
-                operation: Mutex::new(()),
+                operation: Arc::new(Mutex::new(())),
                 tray_status: Mutex::new(None),
                 tray_icon: Mutex::new(None),
                 tray_menu: Mutex::new(None),
@@ -1028,7 +1316,7 @@ fn main() {
                 tray_stop: Mutex::new(None),
                 tray_quit: Mutex::new(None),
                 message: Mutex::new(message),
-                geoip,
+                geoip: Arc::new(geoip),
             });
             use tauri::{
                 menu::{Menu, MenuItem},
@@ -1080,13 +1368,17 @@ fn main() {
                             }
                         }
                         "start" | "stop" => {
-                            if let Err(e) = set_running(event.id.as_ref() == "start", state.clone())
-                            {
-                                *state.message.lock() = Some(e);
-                                if let Some(w) = app.get_webview_window("main") {
-                                    let _ = w.show();
+                            let running = event.id.as_ref() == "start";
+                            let app = app.clone();
+                            tauri::async_runtime::spawn(async move {
+                                let state = app.state::<AppState>();
+                                if let Err(error) = set_running(running, state.clone()).await {
+                                    *state.message.lock() = Some(error);
+                                    if let Some(window) = app.get_webview_window("main") {
+                                        let _ = window.show();
+                                    }
                                 }
-                            }
+                            });
                         }
                         "quit" => {
                             let _ = state.proxy.stop();
@@ -1121,6 +1413,19 @@ fn main() {
             terminate_process,
             keychain_set,
             keychain_delete,
+            list_cloud_accounts,
+            save_cloud_account,
+            verify_cloud_account,
+            list_cloud_regions,
+            list_cloud_security_groups,
+            list_cloud_security_group_rules,
+            list_cloud_managed_rules,
+            preview_cloud_managed_source,
+            create_cloud_managed_rule,
+            sync_cloud_managed_rule,
+            sync_all_cloud_managed_rules,
+            delete_cloud_managed_rule,
+            delete_cloud_account,
             icloud_status,
             icloud_sync,
             icloud_read
@@ -1179,5 +1484,26 @@ mod tests {
         assert!(public_ip_family("2001:4860:4860::8888", "IPv6").is_ok());
         assert!(public_ip_family("8.8.8.8", "IPv6").is_err());
         assert!(public_ip_family("2001:4860:4860::8888", "IPv4").is_err());
+    }
+
+    #[test]
+    fn trusted_public_ipv4_accepts_any_available_source() {
+        assert_eq!(
+            select_trusted_public_ipv4(Ok("8.8.8.8".into()), Err("dns failed".into())).unwrap(),
+            "8.8.8.8/32"
+        );
+        assert_eq!(
+            select_trusted_public_ipv4(Err("http failed".into()), Ok("1.1.1.1".into())).unwrap(),
+            "1.1.1.1/32"
+        );
+    }
+
+    #[test]
+    fn trusted_public_ipv4_rejects_conflicting_or_missing_sources() {
+        assert!(select_trusted_public_ipv4(Ok("8.8.8.8".into()), Ok("1.1.1.1".into())).is_err());
+        assert!(
+            select_trusted_public_ipv4(Err("http failed".into()), Err("dns failed".into()))
+                .is_err()
+        );
     }
 }
