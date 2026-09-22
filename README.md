@@ -50,6 +50,28 @@ brew install --cask yogkang/tap/domain-egress
 
 当前发布流程尚未配置 Apple Developer ID 签名与公证；正式对外发布前应补充相关 GitHub Secrets。
 
+### macOS 提示“应用已损坏，无法打开”
+
+当前安装包尚未完成 Apple 公证。若 macOS 显示“`DomainEgress.app` 已损坏，无法打开。你应该将它移到废纸篓”的提示，请先确认应用来自可信的 Release 或安装包，再任选以下方式处理：
+
+1. 在终端执行以下命令，输入管理员密码后，前往“设置 → 隐私与安全性 → 安全性”，选择“任何来源”：
+
+   ```bash
+   sudo spctl --master-disable
+   ```
+
+2. 或者仅移除该应用的下载隔离属性。将命令中的应用名替换为实际名称：
+
+   ```bash
+   sudo xattr -rd com.apple.quarantine /Applications/xxx.app
+   ```
+
+   例如：
+
+   ```bash
+   sudo xattr -rd com.apple.quarantine /Applications/DomainEgress.app
+   ```
+
 ## Vue 3 桌面版
 
 新入口位于 `vue3/`，使用 **Rust + Tauri 2 + Vue 3 + TypeScript + Vite**。

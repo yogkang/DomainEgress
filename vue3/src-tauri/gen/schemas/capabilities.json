@@ -1,1 +1,1 @@
-{"main-window":{"identifier":"main-window","description":"Local desktop window","local":true,"windows":["main"],"permissions":["core:default","core:window:allow-set-theme"]}}
+{"main-window":{"identifier":"main-window","description":"Local desktop window","local":true,"windows":["main"],"permissions":["core:default","core:window:allow-set-theme","autostart:default"]}}

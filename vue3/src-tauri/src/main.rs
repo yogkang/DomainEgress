@@ -1,6 +1,8 @@
 mod cloud;
 #[path = "../../../src/config.rs"]
 mod config;
+mod hosts;
+mod network_tools;
 #[path = "../../../src/policy.rs"]
 mod policy;
 #[path = "../../../src/proxy.rs"]
@@ -30,6 +32,7 @@ struct AppState {
     tray_quit: Mutex<Option<tauri::menu::MenuItem<tauri::Wry>>>,
     message: Mutex<Option<String>>,
     geoip: Arc<GeoIpDatabases>,
+    network_cancel: Arc<std::sync::atomic::AtomicBool>,
 }
 #[derive(Serialize)]
 struct Snapshot {
@@ -98,7 +101,7 @@ struct UpdateInfo {
     available: bool,
     error: Option<String>,
 }
-const APP_VERSION: &str = "0.3.0";
+const APP_VERSION: &str = "0.4.0";
 fn version_tuple(value: &str) -> Option<(u64, u64, u64)> {
     let values = value
         .trim()
@@ -701,6 +704,53 @@ async fn keychain_set(account: String, secret: String) -> Result<(), String> {
         .await
         .map_err(|error| format!("保存钥匙串任务异常结束：{error}"))?
 }
+
+#[tauri::command]
+async fn run_network_probe(
+    request: network_tools::NetworkProbeRequest,
+    state: State<'_, AppState>,
+) -> Result<network_tools::NetworkProbeResult, String> {
+    let cancel = Arc::clone(&state.network_cancel);
+    cancel.store(false, std::sync::atomic::Ordering::Relaxed);
+    tauri::async_runtime::spawn_blocking(move || network_tools::run(request, cancel))
+        .await
+        .map_err(|error| format!("网络探测任务异常结束：{error}"))
+}
+
+#[tauri::command]
+fn cancel_network_probe(state: State<'_, AppState>) -> Result<(), String> {
+    state
+        .network_cancel
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    Ok(())
+}
+
+#[tauri::command]
+async fn list_host_mappings() -> Result<Vec<hosts::HostMapping>, String> {
+    tauri::async_runtime::spawn_blocking(hosts::list)
+        .await
+        .map_err(|error| format!("读取本地 DNS 任务异常结束：{error}"))?
+}
+
+#[tauri::command]
+async fn add_host_mapping(
+    ip: String,
+    domains: Vec<String>,
+) -> Result<Vec<hosts::HostMapping>, String> {
+    tauri::async_runtime::spawn_blocking(move || hosts::add(ip, domains))
+        .await
+        .map_err(|error| format!("添加本地 DNS 任务异常结束：{error}"))?
+}
+
+#[tauri::command]
+async fn remove_host_mapping(
+    ip: String,
+    domains: Vec<String>,
+) -> Result<Vec<hosts::HostMapping>, String> {
+    tauri::async_runtime::spawn_blocking(move || hosts::remove(ip, domains))
+        .await
+        .map_err(|error| format!("删除本地 DNS 任务异常结束：{error}"))?
+}
 fn keychain_set_blocking(account: String, secret: String) -> Result<(), String> {
     if account.trim().is_empty() || secret.is_empty() {
         return Err("钥匙串账号和凭据不能为空".into());
@@ -1257,6 +1307,7 @@ async fn terminate_process(pid: u32, started: String) -> Result<(), String> {
 }
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::Builder::new().build())
         .setup(|app| {
             let (config, mut message) = match Config::load() {
                 Ok(c) => (c, None),
@@ -1317,6 +1368,7 @@ fn main() {
                 tray_quit: Mutex::new(None),
                 message: Mutex::new(message),
                 geoip: Arc::new(geoip),
+                network_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             });
             use tauri::{
                 menu::{Menu, MenuItem},
@@ -1413,6 +1465,11 @@ fn main() {
             terminate_process,
             keychain_set,
             keychain_delete,
+            run_network_probe,
+            cancel_network_probe,
+            list_host_mappings,
+            add_host_mapping,
+            remove_host_mapping,
             list_cloud_accounts,
             save_cloud_account,
             verify_cloud_account,

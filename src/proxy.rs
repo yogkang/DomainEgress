@@ -158,7 +158,8 @@ fn record(
     if entry.outcome == "放行" {
         let mut t = traffic.write();
         t.push(entry.timestamp);
-        let cutoff = now().saturating_sub(cfg.read().trend_retention_days.clamp(1, 21) as u64 * 86_400);
+        let cutoff =
+            now().saturating_sub(cfg.read().trend_retention_days.clamp(1, 21) as u64 * 86_400);
         t.retain(|x| *x >= cutoff);
     }
     let cfg_snapshot = cfg.read().clone();
@@ -192,24 +193,45 @@ async fn pipe(mut a: TcpStream, mut b: TcpStream) -> Result<()> {
 }
 async fn connect_target(cfg: &Arc<RwLock<Config>>, host: &str, port: u16) -> Result<TcpStream> {
     timeout(Duration::from_secs(15), async {
-    let ssh_port = cfg.read().ssh_proxy_port;
-    if let Some(proxy_port) = ssh_port {
-        let mut stream = TcpStream::connect(("127.0.0.1", proxy_port)).await?;
-        stream.write_all(&[5, 1, 0]).await?;
-        let mut greeting = [0u8; 2]; stream.read_exact(&mut greeting).await?;
-        anyhow::ensure!(greeting == [5, 0], "SSH SOCKS 出口认证失败");
-        let bytes = host.as_bytes(); anyhow::ensure!(bytes.len() <= 255, "目标域名过长");
-        let mut request = vec![5, 1, 0, 3, bytes.len() as u8]; request.extend_from_slice(bytes); request.extend_from_slice(&port.to_be_bytes());
-        stream.write_all(&request).await?;
-        let mut response = [0u8; 4]; stream.read_exact(&mut response).await?;
-        anyhow::ensure!(response[1] == 0, "SSH 出口连接目标失败，错误码 {}", response[1]);
-        let skip = match response[3] { 1 => 4, 3 => { let mut len = [0u8; 1]; stream.read_exact(&mut len).await?; len[0] as usize }, 4 => 16, _ => 0 };
-        let mut tail = vec![0u8; skip + 2]; stream.read_exact(&mut tail).await?;
-        Ok(stream)
-    } else {
-        Ok(TcpStream::connect((host, port)).await?)
-    }
-    }).await.map_err(|_| anyhow::anyhow!("连接上游目标超时（15 秒）"))?
+        let ssh_port = cfg.read().ssh_proxy_port;
+        if let Some(proxy_port) = ssh_port {
+            let mut stream = TcpStream::connect(("127.0.0.1", proxy_port)).await?;
+            stream.write_all(&[5, 1, 0]).await?;
+            let mut greeting = [0u8; 2];
+            stream.read_exact(&mut greeting).await?;
+            anyhow::ensure!(greeting == [5, 0], "SSH SOCKS 出口认证失败");
+            let bytes = host.as_bytes();
+            anyhow::ensure!(bytes.len() <= 255, "目标域名过长");
+            let mut request = vec![5, 1, 0, 3, bytes.len() as u8];
+            request.extend_from_slice(bytes);
+            request.extend_from_slice(&port.to_be_bytes());
+            stream.write_all(&request).await?;
+            let mut response = [0u8; 4];
+            stream.read_exact(&mut response).await?;
+            anyhow::ensure!(
+                response[1] == 0,
+                "SSH 出口连接目标失败，错误码 {}",
+                response[1]
+            );
+            let skip = match response[3] {
+                1 => 4,
+                3 => {
+                    let mut len = [0u8; 1];
+                    stream.read_exact(&mut len).await?;
+                    len[0] as usize
+                }
+                4 => 16,
+                _ => 0,
+            };
+            let mut tail = vec![0u8; skip + 2];
+            stream.read_exact(&mut tail).await?;
+            Ok(stream)
+        } else {
+            Ok(TcpStream::connect((host, port)).await?)
+        }
+    })
+    .await
+    .map_err(|_| anyhow::anyhow!("连接上游目标超时（15 秒）"))?
 }
 fn target_address(authority: &str, default_port: u16) -> Result<(&str, u16)> {
     if let Some(ipv6) = authority.strip_prefix('[') {
@@ -288,9 +310,11 @@ async fn handle_http(
             },
         );
         if f.starts_with("CONNECT ") {
-            c.write_all(b"HTTP/1.1 200 Connection Established\r\nConnection: close\r\n\r\n").await?;
+            c.write_all(b"HTTP/1.1 200 Connection Established\r\nConnection: close\r\n\r\n")
+                .await?;
         } else {
-            c.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await?;
+            c.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                .await?;
         }
         return Ok(());
     }
@@ -311,7 +335,8 @@ async fn handle_http(
     let mut d = match connect_target(&cfg, host, port).await {
         Ok(stream) => stream,
         Err(_) => {
-            c.write_all(b"HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n").await?;
+            c.write_all(b"HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n")
+                .await?;
             return Ok(());
         }
     };

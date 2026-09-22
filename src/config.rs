@@ -3,10 +3,17 @@ use std::{collections::HashMap, fs, io, path::PathBuf};
 fn normalize_rules(rules: &mut Vec<String>, added_at: &mut HashMap<String, u64>) {
     let mut seen = std::collections::HashSet::new();
     let original = std::mem::take(rules);
-    *rules = original.into_iter().filter_map(|rule| {
-        let normalized = rule.trim().trim_end_matches('.').to_lowercase();
-        if !normalized.is_empty() && seen.insert(normalized.clone()) { Some(normalized) } else { None }
-    }).collect();
+    *rules = original
+        .into_iter()
+        .filter_map(|rule| {
+            let normalized = rule.trim().trim_end_matches('.').to_lowercase();
+            if !normalized.is_empty() && seen.insert(normalized.clone()) {
+                Some(normalized)
+            } else {
+                None
+            }
+        })
+        .collect();
     let normalized_added_at = std::mem::take(added_at)
         .into_iter()
         .map(|(rule, timestamp)| (rule.trim().trim_end_matches('.').to_lowercase(), timestamp))
@@ -211,11 +218,21 @@ fn default_log_level() -> String {
 fn default_log_retention_days() -> u32 {
     30
 }
-fn default_trend_retention_days() -> u32 { 21 }
-fn default_font_scale() -> u16 { 100 }
-fn default_gist_file_name() -> String { "domain-egress-rules.json".into() }
-fn default_ssh_auth() -> String { "agent".into() }
-fn default_forward_bind_host() -> String { "127.0.0.1".into() }
+fn default_trend_retention_days() -> u32 {
+    21
+}
+fn default_font_scale() -> u16 {
+    100
+}
+fn default_gist_file_name() -> String {
+    "domain-egress-rules.json".into()
+}
+fn default_ssh_auth() -> String {
+    "agent".into()
+}
+fn default_forward_bind_host() -> String {
+    "127.0.0.1".into()
+}
 impl Config {
     fn path() -> PathBuf {
         dirs::data_local_dir()

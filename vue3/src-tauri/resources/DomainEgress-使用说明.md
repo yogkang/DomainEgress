@@ -13,6 +13,28 @@ SOCKS5：127.0.0.1:16789
 
 在浏览器或其他应用中配置代理后，回到“代理概览”点击“启动代理”。
 
+## macOS 提示“应用已损坏，无法打开”
+
+当前安装包尚未完成 Apple 公证。若 macOS 显示“`DomainEgress.app` 已损坏，无法打开。你应该将它移到废纸篓”的提示，请先确认应用来自可信的 Release 或安装包，再任选以下方式处理：
+
+1. 在终端执行以下命令，输入管理员密码后，前往“设置 → 隐私与安全性 → 安全性”，选择“任何来源”：
+
+   ```bash
+   sudo spctl --master-disable
+   ```
+
+2. 或者仅移除该应用的下载隔离属性。将命令中的应用名替换为实际名称：
+
+   ```bash
+   sudo xattr -rd com.apple.quarantine /Applications/xxx.app
+   ```
+
+   例如：
+
+   ```bash
+   sudo xattr -rd com.apple.quarantine /Applications/DomainEgress.app
+   ```
+
 ## 访问控制
 
 白名单模式只允许匹配规则的目标，白名单为空时拒绝全部访问。黑名单模式默认允许访问，只拦截命中规则的目标。

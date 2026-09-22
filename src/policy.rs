@@ -5,7 +5,11 @@ pub fn allowed(mode: &str, rules: &[String], target: &str) -> bool {
         rules.iter().any(|r| r.eq_ignore_ascii_case(&t))
     } else {
         rules.iter().any(|r| {
-            let x = r.trim().trim_end_matches('.').trim_start_matches('.').to_lowercase();
+            let x = r
+                .trim()
+                .trim_end_matches('.')
+                .trim_start_matches('.')
+                .to_lowercase();
             if let Some(base) = x.strip_prefix("*.") {
                 t.ends_with(&format!(".{base}")) && !t[..t.len() - base.len() - 1].contains('.')
             } else {
