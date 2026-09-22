@@ -78,6 +78,8 @@ pub struct Config {
     pub log_retention_days: u32,
     #[serde(default = "default_trend_retention_days")]
     pub trend_retention_days: u32,
+    #[serde(default = "default_port_refresh_interval_seconds")]
+    pub port_refresh_interval_seconds: u32,
     #[serde(default = "default_font_scale")]
     pub font_scale: u16,
     #[serde(default)]
@@ -197,6 +199,7 @@ impl Default for Config {
             log_level: "info".into(),
             log_retention_days: 30,
             trend_retention_days: 21,
+            port_refresh_interval_seconds: 30,
             font_scale: 100,
             whitelist_added_at: HashMap::new(),
             blacklist_added_at: HashMap::new(),
@@ -220,6 +223,9 @@ fn default_log_retention_days() -> u32 {
 }
 fn default_trend_retention_days() -> u32 {
     21
+}
+fn default_port_refresh_interval_seconds() -> u32 {
+    30
 }
 fn default_font_scale() -> u16 {
     100

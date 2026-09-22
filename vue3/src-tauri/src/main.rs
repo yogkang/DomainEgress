@@ -950,6 +950,9 @@ fn validate(config: &Config) -> Result<(), String> {
     if !(1..=21).contains(&config.trend_retention_days) {
         return Err("趋势历史保留天数应为 1–21".into());
     }
+    if !(1..=86400).contains(&config.port_refresh_interval_seconds) {
+        return Err("监听端口刷新间隔应为 1–86400 秒".into());
+    }
     if ![90, 100, 110, 125].contains(&config.font_scale) {
         return Err("文字大小仅支持 90%、100%、110% 或 125%".into());
     }
@@ -1513,6 +1516,10 @@ mod tests {
         let mut config = Config::default();
         assert!(validate(&config).is_ok());
         assert!(!config.auto_start);
+        assert_eq!(config.port_refresh_interval_seconds, 30);
+        config.port_refresh_interval_seconds = 0;
+        assert!(validate(&config).is_err());
+        config.port_refresh_interval_seconds = 30;
         config.whitelist.push("https://example.com/path".into());
         assert!(validate(&config).is_err());
         config.whitelist = vec!["*.example.com".into(), "::1".into()];
