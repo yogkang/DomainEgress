@@ -21,7 +21,8 @@ export interface Snapshot { config: Config; running: boolean; logs: LogEntry[]; 
 export type NetworkTool = 'ping' | 'telnet' | 'certificate' | 'traceroute' | 'tcp' | 'udp' | 'http' | 'websocket'
 export interface NetworkProbeRequest { tool: NetworkTool; target: string; port: number | null; timeout_ms: number; count: number; method: string; headers: string; body: string; payload: string; payload_hex: boolean }
 export interface NetworkProbeResult { tool: string; target: string; success: boolean; elapsed_ms: number; summary: string; error: string | null; details: Record<string, unknown> }
-export interface HostMapping { ip: string; domains: string[] }
+export interface HostMapping { ip: string; domains: string[]; group: string }
+export interface HostGroup { name: string; enabled: boolean; content: string }
 export interface PortRow { port: string; pid: number; name: string; started: string; elapsed: string }
 export interface CloudAccount { id: string; provider: 'aliyun'; display_name: string; auth_method: 'ram_access_key' | 'access_key'; access_key_hint: string; verified_account_id: string | null; verification_status: string; created_at: number; updated_at: number }
 export interface SaveCloudAccountInput { display_name: string; auth_method: 'ram_access_key' | 'access_key'; access_key_id: string; access_key_secret: string }

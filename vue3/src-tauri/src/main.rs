@@ -101,7 +101,7 @@ struct UpdateInfo {
     available: bool,
     error: Option<String>,
 }
-const APP_VERSION: &str = "0.4.0";
+const APP_VERSION: &str = "0.4.1";
 fn version_tuple(value: &str) -> Option<(u64, u64, u64)> {
     let values = value
         .trim()
@@ -733,11 +733,44 @@ async fn list_host_mappings() -> Result<Vec<hosts::HostMapping>, String> {
 }
 
 #[tauri::command]
+async fn list_host_groups() -> Result<Vec<hosts::HostGroup>, String> {
+    tauri::async_runtime::spawn_blocking(hosts::list_groups)
+        .await
+        .map_err(|error| format!("读取本地 DNS 分组异常结束：{error}"))?
+}
+
+#[tauri::command]
+async fn read_system_hosts() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(hosts::read_system)
+        .await
+        .map_err(|error| format!("读取系统 Hosts 任务异常结束：{error}"))?
+}
+
+#[tauri::command]
+async fn save_host_group(
+    name: String,
+    content: String,
+    enabled: bool,
+) -> Result<Vec<hosts::HostGroup>, String> {
+    tauri::async_runtime::spawn_blocking(move || hosts::save_group(name, content, enabled))
+        .await
+        .map_err(|error| format!("保存本地 DNS 分组异常结束：{error}"))?
+}
+
+#[tauri::command]
+async fn delete_host_group(name: String) -> Result<Vec<hosts::HostGroup>, String> {
+    tauri::async_runtime::spawn_blocking(move || hosts::delete_group(name))
+        .await
+        .map_err(|error| format!("删除本地 DNS 分组异常结束：{error}"))?
+}
+
+#[tauri::command]
 async fn add_host_mapping(
     ip: String,
     domains: Vec<String>,
+    group: String,
 ) -> Result<Vec<hosts::HostMapping>, String> {
-    tauri::async_runtime::spawn_blocking(move || hosts::add(ip, domains))
+    tauri::async_runtime::spawn_blocking(move || hosts::add(ip, domains, group))
         .await
         .map_err(|error| format!("添加本地 DNS 任务异常结束：{error}"))?
 }
@@ -750,6 +783,21 @@ async fn remove_host_mapping(
     tauri::async_runtime::spawn_blocking(move || hosts::remove(ip, domains))
         .await
         .map_err(|error| format!("删除本地 DNS 任务异常结束：{error}"))?
+}
+
+#[tauri::command]
+async fn update_host_mapping(
+    old_ip: String,
+    old_domains: Vec<String>,
+    ip: String,
+    domains: Vec<String>,
+    group: String,
+) -> Result<Vec<hosts::HostMapping>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        hosts::update(old_ip, old_domains, ip, domains, group)
+    })
+    .await
+    .map_err(|error| format!("修改本地 DNS 任务异常结束：{error}"))?
 }
 fn keychain_set_blocking(account: String, secret: String) -> Result<(), String> {
     if account.trim().is_empty() || secret.is_empty() {
@@ -1411,6 +1459,7 @@ fn main() {
             };
             let tray = TrayIconBuilder::new()
                 .icon(tauri::image::Image::from_bytes(initial_icon)?)
+                .icon_as_template(true)
                 .tooltip("DomainEgress")
                 .menu(&menu)
                 .on_menu_event(|app, event| {
@@ -1471,8 +1520,13 @@ fn main() {
             run_network_probe,
             cancel_network_probe,
             list_host_mappings,
+            list_host_groups,
+            read_system_hosts,
+            save_host_group,
+            delete_host_group,
             add_host_mapping,
             remove_host_mapping,
+            update_host_mapping,
             list_cloud_accounts,
             save_cloud_account,
             verify_cloud_account,
