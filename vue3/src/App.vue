@@ -2477,7 +2477,7 @@ onUnmounted(() => {
                     v-model="hostGroupContent"
                     class="hosts-native-editor"
                     spellcheck="false"
-                    placeholder="120.26.99.9 example.com&#10;# 120.26.99.9 disabled.example.com"
+                    placeholder="127.0.0.1 example.com&#10;# 127.0.0.1 disabled.example.com"
                     aria-label="Hosts 分组内容"
                     @scroll="syncHostsEditorScroll($event, groupEditorGutter, groupEditorCode)"
                   ></textarea>
