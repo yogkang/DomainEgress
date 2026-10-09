@@ -244,6 +244,10 @@ const hostBatchGroup = ref("");
 const hostGroups = ref<HostGroup[]>([]);
 const selectedDnsGroup = ref("");
 const hostGroupContent = ref("");
+const selectedDnsGroupDirty = computed(() => {
+  const group = hostGroups.value.find((item) => item.name === selectedDnsGroup.value);
+  return !!group && hostGroupContent.value !== group.content;
+});
 const systemHostsContent = ref("");
 const selectedDnsView = ref<"system" | "group">("system");
 const hostGroupNameDraft = ref("");
@@ -381,7 +385,7 @@ async function saveDnsGroup() {
   const group = hostGroups.value.find(
     (item) => item.name === selectedDnsGroup.value,
   );
-  if (!group) return;
+  if (!group || !selectedDnsGroupDirty.value) return;
   await action(async () => {
     hostGroups.value = await call<HostGroup[]>("save_host_group", {
       name: group.name,
@@ -2454,8 +2458,8 @@ onUnmounted(() => {
                     }}</span>
                   </div>
                   <div class="toolbar">
-                    <button :disabled="busy || !desktop" @click="saveDnsGroup">
-                      <Check :size="15" />保存</button
+                    <button :disabled="busy || !desktop || !selectedDnsGroupDirty" @click="saveDnsGroup">
+                      <Check :size="15" />应用更改</button
                     ><button
                       class="danger-text"
                       :disabled="busy || !desktop"

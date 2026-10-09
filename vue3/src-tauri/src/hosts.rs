@@ -130,6 +130,9 @@ pub fn save_group(name: String, content: String, enabled: bool) -> Result<Vec<Ho
     }
     let (before, mut groups) = parse_groups(&read_hosts()?)?;
     if let Some(group) = groups.iter_mut().find(|group| group.name == name) {
+        if group.content == content && group.enabled == enabled {
+            return Ok(groups);
+        }
         group.content = content;
         group.enabled = enabled;
     } else {
@@ -248,6 +251,9 @@ pub fn list() -> Result<Vec<HostMapping>, String> {
 }
 
 fn write_privileged(content: String) -> Result<(), String> {
+    if read_hosts()? == content {
+        return Ok(());
+    }
     let encoded = base64::engine::general_purpose::STANDARD.encode(content.as_bytes());
     let temp = format!("/tmp/domain-egress-hosts-{}", uuid::Uuid::new_v4());
     let script = format!(
@@ -365,6 +371,12 @@ pub fn update(
         .collect::<std::collections::HashSet<_>>();
     if domains.iter().any(|domain| used.contains(domain)) {
         return Err("域名已存在于其他 DomainEgress hosts 映射".into());
+    }
+    if mappings[index].ip == ip
+        && mappings[index].domains == domains
+        && mappings[index].group == group
+    {
+        return Ok(mappings);
     }
     mappings[index] = HostMapping { ip, domains, group };
     write_privileged(render(&before, &mappings))?;
