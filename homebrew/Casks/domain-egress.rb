@@ -1,10 +1,10 @@
 cask "domain-egress" do
   arch arm: "aarch64", intel: "x64"
 
-  version "0.2.1"
+  version "0.5.0"
 
-  sha256 arm:   "71ecd166e4567ec4e327ba600db73f1185532b2cf0827da6f1c4b3f0ebe81a9b",
-         intel: "fa26ccb999a1105aa44b49def7b42fd011b62a172125d4404c1f1fdd188e874d"
+  sha256 arm:   "0c440128e33b5de6647b01ac65b196759f01a268b15bb7636d458293141d8c4b",
+         intel: "f8cb1f437948ab09de170d5d53a5859b161d1485a56fce8dcb0e118c21556344"
 
   url "https://github.com/yogkang/DomainEgress/releases/download/v#{version}/DomainEgress_#{version}_#{arch}.dmg"
 
