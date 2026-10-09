@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import StaticHttp from "./StaticHttp.vue";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import {
   Activity,
@@ -73,6 +74,7 @@ const tabs = [
   { id: "logs", title: "访问日志", icon: ListFilter },
   { id: "ports", title: "监听端口", icon: Network },
   { id: "ssh-forward", title: "SSH 端口转发", icon: Network },
+  { id: "static-http", title: "静态 HTTP 服务", icon: Server },
   { id: "network-tools", title: "网络探测", icon: Radio },
   { id: "local-dns", title: "本地 DNS", icon: Server },
   { id: "settings", title: "应用设置", icon: Settings2 },
@@ -93,6 +95,7 @@ const pageEyebrow = computed(
       logs: "REQUEST LOGS",
       ports: "SYSTEM NETWORK",
       "ssh-forward": "SSH PORT FORWARDING",
+      "static-http": "LOCAL STATIC HTTP",
       "network-tools": "NETWORK DIAGNOSTICS",
       "local-dns": "LOCAL HOSTS",
       cloud: "CLOUD RESOURCES",
@@ -110,6 +113,7 @@ const pageDescription = computed(
       "network-tools": "从本机直接验证目标的可达性、协议和证书。",
       "local-dns": "维护当前 Mac 的应用专属 /etc/hosts 映射。",
       cloud: "按云账号管理远程资源与网络访问能力。",
+      "static-http": "临时共享本地静态资源，按端口管理目录并查看客户端访问日志。",
       settings: "管理代理监听地址、启动行为与日志策略。",
     })[tab.value] || "",
 );
@@ -1244,7 +1248,7 @@ async function checkUpdate() {
     updateInfo.value = await call<UpdateInfo>("check_update");
   } catch (e) {
     updateInfo.value = {
-      current_version: "0.4.1",
+      current_version: "0.5.0",
       latest_version: null,
       release_url: null,
       available: false,
@@ -2080,7 +2084,7 @@ onUnmounted(() => {
           >{{ running ? "代理正在运行" : "代理已停止" }}
         </div>
         <p>本地网络安全代理</p>
-        <span class="version">DESKTOP / 0.4.1</span
+        <span class="version">DESKTOP / 0.5.0</span
         ><button
           class="sidebar-update"
           :disabled="updateBusy || !desktop"
@@ -2186,6 +2190,7 @@ onUnmounted(() => {
           </button>
         </div>
 
+        <StaticHttp v-if="tab === 'static-http'" />
         <template v-if="tab === 'network-tools'">
           <section class="network-tool-layout">
             <aside class="panel network-tool-menu">
@@ -4568,7 +4573,7 @@ onUnmounted(() => {
             <div>
               <h3>DomainEgress</h3>
               <div class="about-version">
-                <p>版本 0.4.1 · 本地网络安全代理</p>
+                <p>版本 0.5.0 · 本地网络安全代理</p>
                 <button @click="checkUpdate" :disabled="updateBusy">
                   <RefreshCw
                     :size="14"

@@ -11,6 +11,7 @@ mod proxy;
 mod ssh;
 #[path = "../../../src/ssh_forward.rs"]
 mod ssh_forward;
+mod static_http;
 
 use config::Config;
 use parking_lot::{Mutex, RwLock};
@@ -19,6 +20,7 @@ use std::{fs, path::PathBuf, process::Command, sync::Arc};
 use tauri::{Manager, State};
 
 struct AppState {
+    static_http: static_http::Manager,
     config: Arc<RwLock<Config>>,
     proxy: proxy::ProxyManager,
     ssh: Arc<ssh::SshManager>,
@@ -101,7 +103,7 @@ struct UpdateInfo {
     available: bool,
     error: Option<String>,
 }
-const APP_VERSION: &str = "0.4.1";
+const APP_VERSION: &str = "0.5.0";
 fn version_tuple(value: &str) -> Option<(u64, u64, u64)> {
     let values = value
         .trim()
@@ -111,6 +113,47 @@ fn version_tuple(value: &str) -> Option<(u64, u64, u64)> {
         .collect::<Option<Vec<_>>>()?;
     (values.len() >= 3).then_some((values[0], values[1], values[2]))
 }
+#[tauri::command]
+async fn static_http_pick_directory(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .blocking_pick_folder()
+            .map(|path| path.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+#[tauri::command]
+fn static_http_snapshot(state: State<'_, AppState>) -> static_http::Snapshot {
+    state.static_http.snapshot()
+}
+#[tauri::command]
+fn static_http_save(
+    config: static_http::ServiceConfig,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.static_http.save(config)
+}
+#[tauri::command]
+async fn static_http_start(port: u16, state: State<'_, AppState>) -> Result<(), String> {
+    state.static_http.start(port)
+}
+#[tauri::command]
+async fn static_http_stop(port: u16, state: State<'_, AppState>) -> Result<(), String> {
+    state.static_http.stop(port).await;
+    Ok(())
+}
+#[tauri::command]
+async fn static_http_remove(port: u16, state: State<'_, AppState>) -> Result<(), String> {
+    state.static_http.remove(port).await
+}
+#[tauri::command]
+fn static_http_clear_logs(state: State<'_, AppState>) {
+    state.static_http.clear();
+}
+
 #[tauri::command]
 async fn check_update() -> Result<UpdateInfo, String> {
     tauri::async_runtime::spawn_blocking(check_update_blocking)
@@ -1358,6 +1401,7 @@ async fn terminate_process(pid: u32, started: String) -> Result<(), String> {
 }
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .setup(|app| {
             let (config, mut message) = match Config::load() {
@@ -1406,6 +1450,7 @@ fn main() {
                 }
             }
             app.manage(AppState {
+                static_http: static_http::Manager::new(),
                 config: shared,
                 proxy,
                 ssh,
@@ -1503,6 +1548,13 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             snapshot,
+            static_http_pick_directory,
+            static_http_snapshot,
+            static_http_save,
+            static_http_start,
+            static_http_stop,
+            static_http_remove,
+            static_http_clear_logs,
             probe_public_ip,
             check_update,
             open_update,
