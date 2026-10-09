@@ -1,0 +1,1280 @@
+
+body {
+  overflow-x: hidden;
+}
+:where(.app-shell) .content {
+  padding-top: 22px;
+}
+:where(.app-shell) .header-separator {
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+  margin: 0 4px;
+}
+:where(.app-shell) .host-info {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+:where(.app-shell) .sidebar-update {
+  margin-top: 10px;
+  padding: 5px 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+}
+:where(.app-shell) .sidebar-bottom .version {
+  display: block;
+}
+:where(.app-shell) .sidebar-update {
+  display: flex;
+  width: max-content;
+  justify-content: flex-start;
+}
+:where(.app-shell) .sidebar-update:hover {
+  color: var(--accent);
+  background: transparent;
+}
+:where(.app-shell) .sidebar-update-hint {
+  display: block;
+  margin-top: 3px;
+  color: var(--accent);
+  font-size: 9px;
+}
+:where(.app-shell) .page-heading {
+  margin-bottom: 17px;
+}
+:where(.app-shell) .page-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+:where(.app-shell) .page-heading h1 {
+  line-height: 1.3;
+}
+:where(.app-shell) .page-heading p {
+  margin-top: 3px;
+  line-height: 1.55;
+}
+:where(.app-shell) .context-menu {
+  position: fixed;
+  z-index: 30;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 5px;
+  box-shadow: 0 8px 24px var(--shadow);
+}
+:where(.app-shell) .context-menu button {
+  border: 0;
+  width: 100%;
+}
+:where(.app-shell) .context-menu {
+  min-width: 280px;
+  max-width: min(360px, calc(100vw - 24px));
+  padding: 12px;
+}
+:where(.app-shell) .context-menu strong,
+:where(.app-shell) .context-target {
+  display: block;
+}
+:where(.app-shell) .context-target {
+  color: var(--muted);
+  font:
+    10px "SFMono-Regular",
+    Consolas,
+    monospace;
+  margin: 6px 0 10px;
+  overflow-wrap: anywhere;
+}
+:where(.app-shell) .candidate {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 4px;
+  font:
+    11px "SFMono-Regular",
+    Consolas,
+    monospace;
+  cursor: pointer;
+}
+:where(.app-shell) .candidate input {
+  accent-color: var(--accent);
+}
+:where(.app-shell) .context-menu .primary {
+  margin-top: 8px;
+}
+:where(.app-shell) .context-empty {
+  font-size: 11px;
+  padding: 4px 0;
+}
+:where(.app-shell) .ssh-profile {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+:where(.app-shell) .ssh-profile-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 13px;
+}
+:where(.app-shell) .profile-active {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+:where(.app-shell) .profile-name {
+  flex: 1;
+  font-weight: 600;
+  min-width: 120px;
+}
+:where(.app-shell) .ssh-hop {
+  display: grid;
+  grid-template-columns: 28px 2fr 90px 1.5fr 1.2fr 36px;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 9px;
+}
+:where(.app-shell) .hop-index {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: var(--raised);
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: grab;
+  user-select: none;
+}
+:where(.app-shell) .ssh-hop:active .hop-index {
+  cursor: grabbing;
+}
+:where(.app-shell) .ssh-profile .toolbar {
+  margin-top: 10px;
+}
+:where(.app-shell) .ssh-empty {
+  padding: 28px 15px;
+}
+:where(.app-shell) .ssh-forward {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+:where(.app-shell) .ssh-forward-panel > .ssh-forwards {
+  display: none;
+}
+:where(.app-shell) .ssh-forward-panel > .ssh-rule-options {
+  display: none;
+}
+:where(.app-shell) .forward-actions .forward-test-item {
+  display: none;
+}
+:where(.app-shell) .forward-menu-collapsed .forward-split-layout {
+  grid-template-columns: 34px minmax(0, 1fr);
+}
+:where(.app-shell) .forward-menu-collapsed .forward-group-menu {
+  min-height: 52px;
+  padding: 10px 4px;
+  box-sizing: border-box;
+}
+:where(.app-shell) .forward-menu-collapsed .forward-menu-title,
+:where(.app-shell) .forward-menu-collapsed .forward-menu-item,
+:where(.app-shell) .forward-menu-collapsed .forward-menu-add {
+  display: none;
+}
+:where(.app-shell) .grouped-forward-list {
+  display: none;
+}
+:where(.app-shell) .forward-split-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 12px;
+}
+:where(.app-shell) .forward-group-menu {
+  position: relative;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+  align-self: start;
+}
+:where(.app-shell) .forward-menu-title {
+  padding: 6px 9px 10px;
+  color: var(--muted);
+  font-size: 11px;
+}
+:where(.app-shell) .forward-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 9px;
+  border: 0;
+  border-radius: 7px;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+}
+:where(.app-shell) .forward-menu-item:hover,
+:where(.app-shell) .forward-menu-item.active {
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+}
+:where(.app-shell) .forward-menu-item small {
+  margin-left: auto;
+  color: var(--muted);
+}
+:where(.app-shell) .forward-menu-item svg {
+  transition: transform 0.16s ease;
+}
+:where(.app-shell) .forward-menu-item svg.rotated {
+  transform: rotate(90deg);
+}
+:where(.app-shell) .forward-menu-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 7px;
+  justify-content: center;
+}
+:where(.app-shell) .forward-menu-collapse {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  transform: translateY(-50%);
+}
+:where(.app-shell) .forward-menu-collapse:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+:where(.app-shell) .forward-split-content {
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+:where(.app-shell) .forward-split-content.collapsed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 170px;
+}
+:where(.app-shell) .split-content-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+:where(.app-shell) .split-content-head h3 {
+  margin: 0 0 4px;
+}
+:where(.app-shell) .split-content-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+:where(.app-shell) .split-forward-cards {
+  padding-top: 12px;
+}
+:where(.app-shell) .split-empty {
+  color: var(--muted);
+}
+:where(.app-shell) .forward-group {
+  border: 0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+:where(.app-shell) .forward-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 12px;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+:where(.app-shell) .group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  text-align: left;
+  font-size: 13px;
+}
+:where(.app-shell) .group-toggle svg {
+  transition: transform 0.16s ease;
+}
+:where(.app-shell) .group-toggle svg.rotated {
+  transform: rotate(90deg);
+}
+:where(.app-shell) .forward-group-body {
+  position: relative;
+  margin: 0 0 4px 18px;
+  padding: 8px 0 4px 18px;
+  border-left: 1px solid var(--border);
+}
+:where(.app-shell) .group-forward-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+  background: var(--surface);
+}
+:where(.app-shell) .group-forward-card:last-child {
+  margin-bottom: 0;
+}
+:where(.app-shell) .group-forward-card .ssh-forward-grid .local-field input {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+:where(.app-shell) .group-forward-card .ssh-forward-grid .remote-field input {
+  border-color: color-mix(in srgb, #d97706 55%, var(--border));
+  background: color-mix(in srgb, #d97706 8%, var(--surface));
+}
+:where(.app-shell) .forward-view > .panel:not(.ssh-forward-panel) {
+  display: none;
+}
+:where(.app-shell) .forward-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+:where(.app-shell) .forward-test-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 7px 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
+:where(.app-shell) .ssh-global-options,
+:where(.app-shell) .ssh-rule-options {
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-muted);
+}
+:where(.app-shell) .options-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+:where(.app-shell) .options-header div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+:where(.app-shell) .options-header small,
+:where(.app-shell) .ssh-rule-options label {
+  color: var(--muted);
+  font-size: 11px;
+}
+:where(.app-shell) .options-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 12px;
+}
+:where(.app-shell) .option-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.7fr) auto minmax(140px, 1.5fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+:where(.app-shell) .ssh-global-options label,
+:where(.app-shell) .ssh-rule-options label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
+:where(.app-shell) .ssh-global-options textarea,
+:where(.app-shell) .ssh-rule-options textarea {
+  width: 100%;
+  resize: vertical;
+  font-family: var(--mono);
+  line-height: 1.5;
+}
+:where(.app-shell) .ssh-global-options small {
+  display: block;
+  margin-top: 7px;
+  color: var(--muted);
+}
+:where(.app-shell) .ssh-rule-options > .rule-options-item + .rule-options-item {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+:where(.app-shell) .ssh-forward-grid label:nth-child(-n + 2) input {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+:where(.app-shell) .ssh-forward-grid label:nth-child(n + 3):nth-child(-n + 7) input {
+  border-color: color-mix(in srgb, #d97706 55%, var(--border));
+  background: color-mix(in srgb, #d97706 8%, var(--surface));
+}
+:where(.app-shell) .ssh-command-parser {
+  padding: 14px;
+  margin: 0 0 14px;
+  border: 1px dashed var(--border);
+  border-radius: 9px;
+  background: var(--surface-muted);
+}
+:where(.app-shell) .parser-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+:where(.app-shell) .ssh-command-parser label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
+:where(.app-shell) .ssh-command-parser textarea {
+  width: 100%;
+  resize: vertical;
+  font-family: var(--mono);
+  line-height: 1.5;
+}
+:where(.app-shell) .ssh-command-parser .toolbar {
+  margin-top: 14px;
+  gap: 12px;
+}
+:where(.app-shell) .ssh-command-parser .toolbar .muted {
+  line-height: 1.5;
+}
+:where(.app-shell) .ssh-forward-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 13px;
+}
+:where(.app-shell) .ssh-forward-head input:first-child {
+  width: 140px;
+}
+:where(.app-shell) .ssh-forward-head input:nth-child(2) {
+  flex: 1;
+  min-width: 120px;
+}
+:where(.app-shell) .ssh-forward-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+:where(.app-shell) .ssh-forward-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
+:where(.app-shell) .compact-setting {
+  padding: 13px 0;
+  margin: 4px 0 0;
+}
+@media (max-width: 700px) {
+  :where(.app-shell) .ssh-profile-head {
+    flex-wrap: wrap;
+  }
+  :where(.app-shell) .profile-name {
+    order: 2;
+    flex-basis: calc(100% - 80px);
+  }
+  :where(.app-shell) .ssh-hop {
+    grid-template-columns: 28px 1fr 80px;
+  }
+  :where(.app-shell) .ssh-hop input:nth-of-type(2),
+  :where(.app-shell) .ssh-hop select {
+    grid-column: 2 / 4;
+  }
+  :where(.app-shell) .ssh-hop button {
+    grid-column: 3;
+    grid-row: 1;
+  }
+}
+@media (max-width: 700px) {
+  :where(.app-shell) .ssh-forward-head {
+    flex-wrap: wrap;
+  }
+  :where(.app-shell) .ssh-forward-head input:first-child,
+  :where(.app-shell) .ssh-forward-head input:nth-child(2) {
+    width: 100%;
+    flex-basis: 100%;
+  }
+  :where(.app-shell) .ssh-forward-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 800px) {
+  :where(.app-shell) .forward-split-layout {
+    grid-template-columns: 1fr;
+  }
+  :where(.app-shell) .forward-group-menu {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  :where(.app-shell) .forward-menu-title {
+    width: 100%;
+  }
+  :where(.app-shell) .forward-menu-item {
+    width: auto;
+    flex: 1 1 150px;
+  }
+  :where(.app-shell) .forward-menu-add {
+    width: auto;
+  }
+}
+:where(.app-shell) .chart-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+:where(.app-shell) .line-chart {
+  display: block;
+  min-width: 720px;
+}
+:where(.app-shell) .line-chart text {
+  fill: var(--muted);
+  font-size: 10px;
+}
+:where(.app-shell) .service-endpoints {
+  display: flex;
+  gap: 14px;
+  margin-top: 10px;
+  color: var(--muted);
+  font:
+    10px "SFMono-Regular",
+    Consolas,
+    monospace;
+}
+:where(.app-shell) .interface-list {
+  display: grid;
+  gap: 8px;
+}
+:where(.app-shell) .interface-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 64px minmax(0, 2fr);
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--raised);
+  border-radius: 7px;
+}
+:where(.app-shell) .interface-kind {
+  font-size: 12px;
+  font-weight: 600;
+}
+:where(.app-shell) .interface-name {
+  color: var(--muted);
+  font-size: 11px;
+}
+:where(.app-shell) .interface-addresses {
+  min-width: 0;
+  color: var(--text);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+:where(.app-shell) .interface-addresses {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+:where(.app-shell) .interface-address {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  cursor: copy;
+}
+:where(.app-shell) .address-family {
+  width: 34px;
+  flex: none;
+  color: var(--muted);
+  font:
+    10px Inter,
+    -apple-system,
+    sans-serif;
+}
+:where(.app-shell) .status-card {
+  padding: 18px 22px;
+  gap: 14px;
+}
+:where(.app-shell) .status-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+}
+:where(.app-shell) .status-text h2 {
+  margin: 3px 0;
+}
+:where(.app-shell) .service-endpoints {
+  margin-top: 6px;
+}
+:where(.app-shell) .status-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 9px;
+  min-width: 196px;
+}
+:where(.app-shell) .status-actions > button {
+  justify-content: center;
+}
+:where(.app-shell) .overview-auto-start {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+}
+:where(.app-shell) .overview-auto-start > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+}
+:where(.app-shell) .overview-auto-start small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 400;
+}
+:where(.app-shell) .network-summary {
+  padding: 19px 22px;
+}
+:where(.app-shell) .network-summary .section-heading {
+  margin-bottom: 16px;
+}
+:where(.app-shell) .network-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+:where(.app-shell) .network-block {
+  min-width: 0;
+  padding: 16px;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+:where(.app-shell) .network-block h4 {
+  margin: 0;
+  font-size: 12px;
+}
+:where(.app-shell) .network-block > p {
+  margin-top: 4px;
+  font-size: 10px;
+}
+:where(.app-shell) .network-block .interface-list {
+  margin-top: 11px;
+}
+:where(.app-shell) .network-block .empty {
+  padding: 25px 10px;
+}
+:where(.app-shell) .network-block-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+:where(.app-shell) .network-block-heading p {
+  margin-top: 4px;
+  font-size: 10px;
+}
+:where(.app-shell) .public-ip-block {
+  border-left: 1px solid var(--border);
+}
+:where(.app-shell) .public-ip-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px 12px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+:where(.app-shell) .public-ip-result:last-of-type {
+  border-bottom: 0;
+}
+:where(.app-shell) .public-ip-result > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+:where(.app-shell) .probe-address {
+  grid-column: 1 / -1;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  padding: 9px 10px;
+  background: var(--raised);
+  border-radius: 7px;
+}
+:where(.app-shell) .public-ip-result:has(.probe-address + .probe-address) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+:where(.app-shell) .public-ip-result:has(.probe-address + .probe-address)
+  > :not(.probe-address):not(.location-meta) {
+  grid-column: 1 / -1;
+}
+:where(.app-shell) .public-ip-result:has(.probe-address + .probe-address) .probe-address {
+  grid-column: auto;
+}
+:where(.app-shell) .probe-address > div {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+:where(.app-shell) .probe-address .location-value {
+  align-self: center;
+}
+:where(.app-shell) .location-value {
+  font-size: 12px;
+  color: var(--text);
+}
+:where(.app-shell) .location-meta {
+  grid-column: 1 / -1;
+  font-size: 10px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+:where(.app-shell) .public-ip-block .footnote {
+  margin-top: 12px;
+}
+:where(.app-shell) .refresh-icon {
+  display: block;
+  transform-origin: center;
+}
+:where(.app-shell) .refresh-icon.is-spinning {
+  animation: refresh-icon-spin 0.8s linear infinite;
+}
+@keyframes refresh-icon-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :where(.app-shell) .refresh-icon.is-spinning {
+    animation: none;
+  }
+}
+:where(.app-shell) .update-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 12px 15px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 9px;
+}
+:where(.app-shell) .update-banner span {
+  flex: 1;
+  font-size: 12px;
+}
+:where(.app-shell) .update-dismiss {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+:where(.app-shell) .about-version {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+:where(.app-shell) .about-version p {
+  margin: 0;
+}
+:where(.app-shell) .about-version button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+:where(.app-shell) .update-hint {
+  color: var(--accent);
+}
+:where(.app-shell) .public-ip-result strong {
+  font-size: 18px;
+  letter-spacing: 0.02em;
+}
+.app-shell {
+  font-size: calc(13px * var(--font-scale, 1));
+}
+.app-shell h1 {
+  font-size: calc(27px * var(--font-scale, 1));
+}
+.app-shell h2 {
+  font-size: calc(20px * var(--font-scale, 1));
+}
+.app-shell h3 {
+  font-size: calc(14px * var(--font-scale, 1));
+}
+.app-shell h4 {
+  font-size: calc(12px * var(--font-scale, 1));
+}
+.app-shell :is(button, input, select, textarea) {
+  font-size: inherit;
+}
+:where(.app-shell) .font-scale-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+:where(.app-shell) .font-scale-row .footnote {
+  margin: 0;
+}
+:where(.app-shell) .font-scale-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+:where(.app-shell) .font-scale-buttons button {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+}
+:where(.app-shell) .font-scale-buttons output {
+  min-width: 62px;
+  text-align: center;
+  font: 600 15px var(--mono);
+}
+:where(.app-shell) .notice .undo {
+  color: var(--accent);
+  font-weight: 600;
+  padding: 4px 8px;
+  background: none;
+  border: 0;
+}
+:where(.app-shell) .gist-sync-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 22px;
+  row-gap: 18px;
+}
+:where(.app-shell) .gist-sync-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+:where(.app-shell) .gist-sync-actions .muted {
+  margin-left: 4px;
+}
+@media (max-width: 700px) {
+  :where(.app-shell) .service-endpoints {
+    flex-direction: column;
+    gap: 4px;
+  }
+  :where(.app-shell) .status-text {
+    min-width: 0;
+  }
+  :where(.app-shell) .service-endpoints span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+@media (max-width: 700px) {
+  :where(.app-shell) .gist-sync-grid {
+    grid-template-columns: 1fr;
+  }
+  :where(.app-shell) .gist-sync-actions {
+    align-items: stretch;
+  }
+  :where(.app-shell) .gist-sync-actions button,
+  :where(.app-shell) .gist-sync-actions .muted {
+    width: 100%;
+  }
+}
+@media (max-width: 700px) {
+  :where(.app-shell) .interface-row {
+    grid-template-columns: 1fr auto;
+    gap: 5px 10px;
+  }
+  :where(.app-shell) .interface-addresses {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 700px) {
+  :where(.app-shell) .status-card {
+    padding: 16px;
+  }
+  :where(.app-shell) .network-summary {
+    padding: 17px;
+  }
+  :where(.app-shell) .network-summary-grid {
+    gap: 12px;
+  }
+  :where(.app-shell) .network-block {
+    padding: 14px;
+  }
+  :where(.app-shell) .public-ip-block {
+    border-left: 1px solid var(--border);
+  }
+}
+@media (max-width: 700px) {
+  :where(.app-shell) .status-actions {
+    width: 100%;
+  }
+}
+@media (max-width: 700px) {
+  :where(.app-shell) .public-ip-result {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+  }
+  :where(.app-shell) .public-ip-result > .pill {
+    justify-self: start;
+  }
+  :where(.app-shell) .probe-address {
+    grid-template-columns: 1fr;
+  }
+  :where(.app-shell) .probe-address .location-value {
+    align-self: start;
+  }
+}
+@media (max-width: 700px) {
+  :where(.app-shell) .public-ip-result:has(.probe-address + .probe-address) {
+    grid-template-columns: 1fr;
+  }
+  :where(.app-shell) .font-scale-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+}
+@media (max-width: 700px) {
+  :where(.app-shell) .update-banner {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  :where(.app-shell) .update-banner span {
+    flex-basis: calc(100% - 30px);
+  }
+}
+@media (max-width: 700px) {
+  :where(.app-shell) .host-info {
+    max-width: 90px;
+  }
+  :where(.app-shell) .header-separator {
+    margin: 0 1px;
+  }
+}
+:where(.app-shell) .cloud-intro {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 18px 20px;
+  margin-bottom: 18px;
+  border: 1px solid var(--accent-border);
+  border-radius: 10px;
+  background: var(--accent-soft);
+}
+:where(.app-shell) .cloud-nav-parent {
+  color: var(--fg) !important;
+  font-weight: 600;
+}
+:where(.app-shell) .cloud-nav-parent.active {
+  background: transparent !important;
+  color: var(--fg) !important;
+}
+:where(.app-shell) .cloud-nav-parent.active > svg:last-child {
+  transform: rotate(90deg);
+}
+:where(.app-shell) .cloud-nav-children {
+  margin: -3px 0 5px 20px;
+  padding: 1px 0 2px 8px;
+  border-left: 1px solid var(--accent-border);
+}
+:where(.app-shell) .cloud-nav-children button {
+  min-height: 31px;
+  padding: 7px 9px;
+  font-size: 11px;
+}
+:where(.app-shell) .cloud-nav-children button.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+:where(.app-shell) .cloud-nav-children small {
+  margin-left: auto;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--raised);
+  font-size: 9px;
+}
+:where(.app-shell) .cloud-intro-icon,
+:where(.app-shell) .cloud-provider {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 9px;
+}
+:where(.app-shell) .cloud-intro-icon {
+  width: 40px;
+  height: 40px;
+  color: var(--accent);
+  background: var(--surface);
+}
+:where(.app-shell) .cloud-intro strong {
+  font-size: 13px;
+}
+:where(.app-shell) .cloud-intro p {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+:where(.app-shell) .cloud-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 0 8px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+:where(.app-shell) .cloud-tabs button {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  padding: 10px 7px;
+}
+:where(.app-shell) .cloud-tabs button.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+:where(.app-shell) .cloud-tabs span {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--raised);
+  font-size: 10px;
+}
+:where(.app-shell) .cloud-account-list {
+  border-top: 1px solid var(--border);
+}
+:where(.app-shell) .cloud-account-row {
+  display: grid;
+  grid-template-columns: 40px minmax(180px, 1.5fr) 120px 130px auto;
+  align-items: center;
+  gap: 16px;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--border);
+}
+:where(.app-shell) .cloud-account-row:last-child {
+  border-bottom: 0;
+}
+:where(.app-shell) .cloud-provider {
+  width: 36px;
+  height: 36px;
+  background: #fff0e2;
+  color: #dc6f17;
+  font-size: 10px;
+  font-weight: 700;
+}
+:where(.app-shell) .cloud-account-row strong {
+  display: block;
+  font-size: 12px;
+}
+:where(.app-shell) .cloud-account-row small,
+:where(.app-shell) .cloud-field-label {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 10px;
+}
+:where(.app-shell) .cloud-row-actions {
+  display: flex;
+  gap: 8px;
+}
+:where(.app-shell) .cloud-row-actions button {
+  padding: 7px 9px;
+}
+:where(.app-shell) .cloud-empty {
+  padding: 44px 15px;
+}
+:where(.app-shell) .cloud-empty svg {
+  color: var(--muted);
+}
+:where(.app-shell) .cloud-security-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr);
+  gap: 14px;
+  margin: 18px 0;
+}
+:where(.app-shell) .cloud-security-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
+:where(.app-shell) .cloud-security-list {
+  border-top: 1px solid var(--border);
+}
+:where(.app-shell) .cloud-security-row {
+  display: grid;
+  grid-template-columns: 40px minmax(180px, 1.5fr) minmax(
+      140px,
+      1fr
+    ) 100px auto;
+  align-items: center;
+  gap: 16px;
+  padding: 15px 8px;
+  border-bottom: 1px solid var(--border);
+}
+:where(.app-shell) .cloud-security-row strong,
+:where(.app-shell) .cloud-security-row small {
+  display: block;
+}
+:where(.app-shell) .cloud-security-row small {
+  margin-top: 4px;
+  color: var(--muted);
+}
+:where(.app-shell) .cloud-security-row.selected {
+  background: var(--accent-soft);
+}
+:where(.app-shell) .cloud-security-row:last-child {
+  border-bottom: 0;
+}
+:where(.app-shell) .managed-description {
+  color: var(--accent);
+  font-weight: 600;
+}
+:where(.app-shell) .cloud-managed-list article {
+  display: grid;
+  grid-template-columns: minmax(260px, 2fr) minmax(130px, 1fr) 90px auto;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+:where(.app-shell) .cloud-managed-list small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+}
+:where(.app-shell) .cloud-managed-error {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--danger);
+  font-size: 10px;
+}
+:where(.app-shell) .cloud-managed-target {
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--raised);
+}
+:where(.app-shell) .cloud-managed-target span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 10px;
+}
+:where(.app-shell) .cloud-account-modal label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  margin: 15px 0;
+}
+:where(.app-shell) .cloud-account-modal .section-heading > button {
+  padding: 5px;
+}
+:where(.app-shell) .cloud-account-modal .toolbar {
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+:where(.app-shell) .cloud-modal-hint {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  padding: 10px;
+  border: 1px solid var(--warning-border);
+  border-radius: 7px;
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-size: 10px;
+  line-height: 1.6;
+}
+:where(.app-shell) .cloud-source-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+:where(.app-shell) .cloud-source-field button {
+  white-space: nowrap;
+}
+:where(.app-shell) .cloud-source-error {
+  color: var(--danger) !important;
+  line-height: 1.5;
+}
+@media (max-width: 700px) {
+  :where(.app-shell) .cloud-account-row {
+    grid-template-columns: 36px 1fr auto;
+    gap: 10px;
+  }
+  :where(.app-shell) .cloud-account-row > div:nth-of-type(2),
+  :where(.app-shell) .cloud-account-row > div:nth-of-type(3) {
+    display: none;
+  }
+  :where(.app-shell) .cloud-security-filters {
+    grid-template-columns: 1fr;
+  }
+  :where(.app-shell) .cloud-security-row {
+    grid-template-columns: 36px 1fr auto;
+    gap: 10px;
+  }
+  :where(.app-shell) .cloud-security-row > div:nth-of-type(2),
+  :where(.app-shell) .cloud-security-row > div:nth-of-type(3) {
+    display: none;
+  }
+  :where(.app-shell) .cloud-managed-list article {
+    grid-template-columns: 1fr auto;
+  }
+  :where(.app-shell) .cloud-managed-list article > div:nth-of-type(2),
+  :where(.app-shell) .cloud-managed-list article > div:nth-of-type(3) {
+    display: none;
+  }
+}

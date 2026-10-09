@@ -15,8 +15,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
         with:
-          workspaces: vue3/src-tauri -> vue3/src-tauri/target
-      - run: cargo test --manifest-path vue3/src-tauri/Cargo.toml
+          workspaces: src-tauri -> src-tauri/target
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
 
   frontend:
     name: Frontend build
@@ -27,8 +27,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: vue3/package-lock.json
+          cache-dependency-path: package-lock.json
       - run: npm ci
-        working-directory: vue3
+        working-directory: .
       - run: npm run build
-        working-directory: vue3
+        working-directory: .

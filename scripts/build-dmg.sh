@@ -3,10 +3,10 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
-APP_SOURCE="$PROJECT_DIR/vue3/src-tauri/target/release/bundle/macos/DomainEgress.app"
-DOC_SOURCE="$PROJECT_DIR/vue3/src-tauri/resources/DomainEgress-使用说明.md"
-DMG_DIR="$PROJECT_DIR/vue3/src-tauri/target/release/bundle/dmg"
-VERSION=$(sed -n 's/^version = "\([^"]*\)"$/\1/p' "$PROJECT_DIR/vue3/src-tauri/Cargo.toml" | head -n 1)
+APP_SOURCE="$PROJECT_DIR/src-tauri/target/release/bundle/macos/DomainEgress.app"
+DOC_SOURCE="$PROJECT_DIR/docs/使用说明.md"
+DMG_DIR="$PROJECT_DIR/src-tauri/target/release/bundle/dmg"
+VERSION=$(sed -n 's/^version = "\([^"]*\)"$/\1/p' "$PROJECT_DIR/src-tauri/Cargo.toml" | head -n 1)
 ARCH=$(uname -m)
 case "$ARCH" in
   arm64|aarch64) ARCH="arm64" ;;

@@ -12,7 +12,7 @@ work_dir=$(mktemp -d)
 trap 'rm -rf "$work_dir"' EXIT
 
 git clone --depth 1 --branch "$1" https://github.com/lionsoul2014/ip2region.git "$work_dir/ip2region"
-data_dir="$repo_root/vue3/src-tauri/resources/geoip"
+data_dir="$repo_root/src-tauri/resources/geoip"
 mkdir -p "$data_dir"
 install -m 0644 "$work_dir/ip2region/data/ip2region_v4.xdb" "$data_dir/ip2region_v4.xdb"
 install -m 0644 "$work_dir/ip2region/data/ip2region_v6.xdb" "$data_dir/ip2region_v6.xdb"

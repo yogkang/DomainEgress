@@ -1,13 +1,8 @@
 /target/
 
-# Shared Rust sources used by the Tauri desktop application
-/src/main.rs
-/Cargo.toml
-/Cargo.lock
-
-/vue3/node_modules/
-/vue3/dist/
-/vue3/src-tauri/target/
+/node_modules
+/dist/
+/src-tauri/target/
 
 # Generated source archives and local build output
 /output/

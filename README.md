@@ -10,11 +10,15 @@ Rust + Tauri 2 + Vue 3 macOS 本地代理客户端，提供 HTTP/HTTPS CONNECT �
 
 ## GitHub Release 与 Homebrew
 
-推送版本 tag 后，GitHub Actions 会分别构建 macOS Apple Silicon（arm64）和 Intel（x86_64）安装包，并创建 Draft Release：
+正式 Release 安装包由 GitHub Actions 构建，使用 `gh` 跟踪构建及管理发布。推送版本 tag 后，GitHub Actions 会分别构建 macOS Apple Silicon（arm64）和 Intel（x86_64）安装包，并创建 Draft Release：
 
 ```bash
-git tag v0.1.2
-git push origin v0.1.2
+git tag vX.Y.Z
+git push origin vX.Y.Z
+gh run list --workflow release.yml
+gh run watch <run-id> --exit-status
+# 安装包验证完成后发布草稿并设为 Latest
+gh release edit vX.Y.Z --draft=false --latest
 ```
 
 Homebrew Cask 模板位于 [`homebrew/Casks/domain-egress.rb`](homebrew/Casks/domain-egress.rb)。发布新版本后，将其复制到 `yogkang/homebrew-tap` 仓库的 `Casks/domain-egress.rb`，更新 `version` 和两个架构对应的 SHA-256。
@@ -72,9 +76,9 @@ brew install --cask yogkang/tap/domain-egress
    sudo xattr -rd com.apple.quarantine /Applications/DomainEgress.app
    ```
 
-## Vue 3 桌面版
+## 开发与构建
 
-新入口位于 `vue3/`，使用 **Rust + Tauri 2 + Vue 3 + TypeScript + Vite**。
+项目在根目录构建，使用 **Rust + Tauri 2 + Vue 3 + TypeScript + Vite**。
 Vue 界面通过 Tauri IPC 调用 Rust。
 
 ### 启动
@@ -84,21 +88,20 @@ Vue 界面通过 Tauri IPC 调用 Rust。
 ```bash
 ./scripts/start-vue.sh
 # 或：
-cd vue3
 npm ci
 npm run desktop
 ```
 
-直接打包 `.app` 和 `.dmg` 安装包：
+本机开发需要安装应用时，可构建 `.app` 和 `.dmg`：
 
 ```bash
 ./scripts/install-vue.sh
 ```
 
-产物位于 `vue3/src-tauri/target/release/bundle/`，包括 macOS 应用和 DMG 安装包。
+产物位于 `src-tauri/target/release/bundle/`，包括 macOS 应用和 DMG 安装包。
 
 开发启动会同时运行 Vite 和桌面窗口，支持界面热更新。
-仅预览界面：在 `vue3` 中运行 `npm run dev`，打开 `http://127.0.0.1:1420`。
+仅预览界面：在项目根目录运行 `npm run dev`，打开 `http://127.0.0.1:1420`。
 浏览器预览明确标记为未连接核心，不提供代理启停、配置持久化或进程管理。
 
 ### 功能
@@ -118,20 +121,19 @@ npm run desktop
 ### 构建与校验
 
 ```bash
-cargo test --manifest-path vue3/src-tauri/Cargo.toml
-cd vue3
+cargo check --manifest-path src-tauri/Cargo.toml
 npm run build
 npm run package
 ```
 
-独立桌面应用输出：`vue3/src-tauri/target/release/bundle/macos/DomainEgress.app`。
+独立桌面应用输出：`src-tauri/target/release/bundle/macos/DomainEgress.app`。
 打包后的应用包含前端资源，无需启动 Node/Vite。此构建用于本机运行，未做 Apple 公证。
 
 ```bash
-open "vue3/src-tauri/target/release/bundle/macos/DomainEgress.app"
+open "src-tauri/target/release/bundle/macos/DomainEgress.app"
 ```
 
-面向使用者的安装和操作教程见：[vue3/README.md](vue3/README.md)。
+面向使用者的安装和操作教程见：[使用说明](docs/使用说明.md)。
 
 ### 外观与程序员主题
 
@@ -155,7 +157,7 @@ open "vue3/src-tauri/target/release/bundle/macos/DomainEgress.app"
 真实 HTTP 端到端验证（不使用单元测试，不修改用户配置）：
 
 ```sh
-cargo run --manifest-path vue3/src-tauri/Cargo.toml --example static-http-e2e -- /tmp/domain-egress-static-http-e2e
+cargo run --manifest-path src-tauri/Cargo.toml --example static-http-e2e -- /tmp/domain-egress-static-http-e2e
 ```
 
 输出目录包含两个资源根目录、配置和 `report.json`（检查结果及真实客户端请求日志）。可重复执行，覆盖根目录热切换、多端口独立访问、中文路径、HEAD/Range、端口占用、路径安全、配置恢复、日志和启停删除。
